@@ -1334,7 +1334,7 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		master = c_ctrl->cci_info->cci_i2c_master;
 		CDBG("%s:%d master %d\n", __func__, __LINE__, master);
 		if (master < MASTER_MAX && master >= 0) {
-			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+			//mutex_lock(&cci_dev->cci_master_info[master].mutex); //ASUS_BSP PJ_Ma+++
 			mutex_lock(&cci_dev->cci_master_info[master].
 				mutex_q[PRIORITY_QUEUE]);
 			mutex_lock(&cci_dev->cci_master_info[master].
@@ -1367,7 +1367,7 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 				mutex_q[SYNC_QUEUE]);
 			mutex_unlock(&cci_dev->cci_master_info[master].
 				mutex_q[PRIORITY_QUEUE]);
-			mutex_unlock(&cci_dev->cci_master_info[master].mutex);
+			//mutex_unlock(&cci_dev->cci_master_info[master].mutex); //ASUS_BSP PJ_Ma+++
 		}
 		return 0;
 	}
@@ -1663,6 +1663,22 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *cci_ctrl)
 {
 	int32_t rc = 0;
+	//ASUS_BSP PJ_Ma+++
+	struct cci_device *cci_dev;
+	enum cci_i2c_master_t master = MASTER_0;
+	cci_dev = v4l2_get_subdevdata(sd);
+	if(cci_ctrl->cmd != MSM_CCI_RELEASE) {
+		if (!cci_dev || !cci_ctrl || !cci_ctrl->cci_info) {
+			pr_err("%s:%d failed: invalid params %pK %pK\n", __func__,
+				__LINE__, cci_dev, cci_ctrl);
+			rc = -EINVAL;
+			return rc;
+		}
+		master = cci_ctrl->cci_info->cci_i2c_master;
+		if (master < MASTER_MAX && master >= 0)
+			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+	}
+	//ASUS_BSP PJ_Ma---
 	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
 		cci_ctrl->cmd);
 	switch (cci_ctrl->cmd) {
@@ -1693,6 +1709,12 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	}
 	CDBG("%s line %d rc %d\n", __func__, __LINE__, rc);
 	cci_ctrl->status = rc;
+	//ASUS_BSP PJ_Ma+++
+	if(cci_ctrl->cmd != MSM_CCI_RELEASE) {
+		if (master < MASTER_MAX && master >= 0)
+			mutex_unlock(&cci_dev->cci_master_info[master].mutex);
+	}
+	//ASUS_BSP PJ_Ma---
 	return rc;
 }
 

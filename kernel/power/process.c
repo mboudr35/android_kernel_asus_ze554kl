@@ -140,7 +140,7 @@ int freeze_processes(void)
 		atomic_inc(&system_freezing_cnt);
 
 	pm_wakeup_clear();
-	pr_info("Freezing user space processes ... ");
+	pr_info("Freezing user space processes ...\n");
 	pm_freezing = true;
 	error = try_to_freeze_tasks(true);
 	if (!error) {
@@ -203,7 +203,7 @@ void thaw_processes(void)
 
 	oom_killer_enable();
 
-	pr_info("Restarting tasks ... ");
+	pr_info("Restarting tasks ... \n");
 
 	__usermodehelper_set_disable_depth(UMH_FREEZING);
 	thaw_workqueues();

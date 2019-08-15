@@ -1015,6 +1015,28 @@ temp_show(struct device *dev, struct device_attribute *attr, char *buf)
 	return sprintf(buf, "%d\n", temperature);
 }
 
+/* ASUS_BSP (ShowCai) +++ For ATD parser format */
+static ssize_t
+mtemp_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	int temperature, ret;
+	long mtemperature;
+
+	ret = thermal_zone_get_temp(tz, &temperature);
+	mtemperature = temperature  * 1000;
+
+	if(strstr(tz->type,"tsens_tz") != NULL){
+		mtemperature = mtemperature / 10;
+	}
+
+	if (ret)
+		return ret;
+
+	return sprintf(buf, "%ld\n", mtemperature);
+}
+/* ASUS_BSP (ShowCai) --- Show For ATD parser format */
+
 static ssize_t
 mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1553,6 +1575,9 @@ int power_actor_set_power(struct thermal_cooling_device *cdev,
 
 static DEVICE_ATTR(type, 0444, type_show, NULL);
 static DEVICE_ATTR(temp, 0444, temp_show, NULL);
+/* ASUS_BSP (ShowCai) +++ for ATD parser format */
+static DEVICE_ATTR(mtemp, 0444, mtemp_show, NULL);
+/* ASUS_BSP (ShowCai) --- for ATD parser format */
 static DEVICE_ATTR(mode, 0644, mode_show, mode_store);
 static DEVICE_ATTR(passive, S_IRUGO | S_IWUSR, passive_show, passive_store);
 static DEVICE_ATTR(policy, S_IRUGO | S_IWUSR, policy_show, policy_store);
@@ -2317,6 +2342,12 @@ struct thermal_zone_device *thermal_zone_device_register(const char *type,
 	result = device_create_file(&tz->device, &dev_attr_temp);
 	if (result)
 		goto unregister;
+		
+	/* ASUS_BSP (ShowCai) +++ For ATD parser format */
+	result = device_create_file(&tz->device, &dev_attr_mtemp);
+	if (result)
+		goto unregister;
+	/* ASUS_BSP (ShowCai) --- For ATD parser format */
 
 	if (ops->get_mode) {
 		result = device_create_file(&tz->device, &dev_attr_mode);

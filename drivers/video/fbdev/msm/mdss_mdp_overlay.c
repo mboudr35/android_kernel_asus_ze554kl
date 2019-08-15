@@ -76,6 +76,8 @@ static inline bool is_ov_right_blend(struct mdp_rect *left_blend,
 		(left_blend->h == right_blend->h));
 }
 
+int g_fps_customise_update = 0; //austin+++
+
 /**
  * __is_more_decimation_doable() -
  * @pipe: pointer to pipe data structure
@@ -3600,6 +3602,12 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		return -EINVAL;
 	}
 
+	//fix DFPS austin+++
+	if (data.fps != pdata->panel_info.default_fps)
+		g_fps_customise_update = data.fps;
+	else
+		g_fps_customise_update = pdata->panel_info.default_fps;
+
 	rc = mdss_mdp_dfps_update_params(mfd, pdata, &data);
 	if (rc) {
 		pr_err("failed to set dfps params\n");
@@ -4848,17 +4856,20 @@ static int mdss_mdp_pp_ioctl(struct msm_fb_data_type *mfd,
 						&mdp_pp.data.bl_scale_data);
 		break;
 	case mdp_op_ad_cfg:
+		pr_info("%s mdp_op_ad_config \n",__func__);
 		ret = mdss_mdp_ad_config(mfd, &mdp_pp.data.ad_init_cfg);
+		copyback = 1;
 		break;
 	case mdp_op_ad_bl_cfg:
 		ret = mdss_mdp_ad_bl_config(mfd, &mdp_pp.data.ad_bl_cfg);
 		break;
 	case mdp_op_ad_input:
+		pr_info("%s mdp_op_ad_input \n",__func__);
 		ret = mdss_mdp_ad_input(mfd, &mdp_pp.data.ad_input, 1);
 		if (ret > 0) {
 			ret = 0;
-			copyback = 1;
 		}
+		copyback = 1;
 		break;
 	case mdp_op_calib_cfg:
 		ret = mdss_mdp_calib_config((struct mdp_calib_config_data *)
@@ -5807,6 +5818,7 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	int rc;
 	struct mdss_overlay_private *mdp5_data;
 	struct mdss_mdp_mixer *mixer;
+	struct mdss_mdp_pipe *pipe, *tmp;
 	int need_cleanup;
 	int retire_cnt;
 	bool destroy_ctl = false;
@@ -5862,6 +5874,13 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		mixer->cursor_enabled = 0;
 
 	mutex_lock(&mdp5_data->list_lock);
+	if (!list_empty(&mdp5_data->pipes_used)) {
+		list_for_each_entry_safe(
+			pipe, tmp, &mdp5_data->pipes_used, list) {
+			pipe->file = NULL;
+			list_move(&pipe->list, &mdp5_data->pipes_cleanup);
+		}
+	}
 	need_cleanup = !list_empty(&mdp5_data->pipes_cleanup);
 	mutex_unlock(&mdp5_data->list_lock);
 	mutex_unlock(&mdp5_data->ov_lock);

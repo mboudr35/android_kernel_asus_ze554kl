@@ -34,6 +34,7 @@
 		};
 
 		tasha_hph_en1: msm_cdc_pinctrl_hph_en1 {
+		      status = "disabled";
 		      compatible = "qcom,msm-cdc-pinctrl";
 		      pinctrl-names = "aud_active", "aud_sleep";
 		      pinctrl-0 = <&hph_en1_active>;

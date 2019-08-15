@@ -33,6 +33,7 @@
 #include <linux/syscalls.h>
 
 #include <asm/atomic.h>
+#include <asm/barrier.h>
 #include <asm/bug.h>
 #include <asm/debug-monitors.h>
 #include <asm/esr.h>
@@ -231,6 +232,11 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 	barrier();
 }
 
+//void dump_stack(void)
+//{
+//	dump_backtrace(NULL, NULL);
+//}
+//EXPORT_SYMBOL(dump_stack); //ASUS_BSP Deeo : add for SD Texura module +++
 #ifdef CONFIG_PREEMPT
 #define S_PREEMPT " PREEMPT"
 #else
@@ -324,15 +330,24 @@ void die(const char *str, struct pt_regs *regs, int err)
 	struct thread_info *thread = current_thread_info();
 	enum bug_trap_type bug_type = BUG_TRAP_TYPE_NONE;
 	unsigned long flags = oops_begin();
-	int ret;
+	int ret = 0;
 
-	if (!user_mode(regs))
-		bug_type = report_bug(regs->pc, regs);
-	if (bug_type != BUG_TRAP_TYPE_NONE)
-		str = "Oops - BUG";
+	if (regs != NULL) {
+		if (!user_mode(regs))
+			bug_type = report_bug(regs->pc, regs);
+		if (bug_type != BUG_TRAP_TYPE_NONE)
+			str = "Oops - BUG";
 
-	ret = __die(str, err, thread, regs);
+		ret = __die(str, err, thread, regs);
+	}
 
+	if (in_interrupt()) {
+		printk("DIE: in int %s", str);
+    }
+	if (panic_on_oops) {
+		printk("DIE: %s", str);
+    }
+	
 	oops_end(flags, regs, ret);
 }
 
@@ -437,6 +452,38 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	info.si_addr  = pc;
 
 	arm64_notify_die("Oops - undefined instruction", regs, &info, 0);
+}
+
+static void cntvct_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	isb();
+	if (rt != 31)
+		regs->regs[rt] = arch_counter_get_cntvct();
+	regs->pc += 4;
+}
+
+static void cntfrq_read_handler(unsigned int esr, struct pt_regs *regs)
+{
+	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
+
+	if (rt != 31)
+		regs->regs[rt] = read_sysreg(cntfrq_el0);
+	regs->pc += 4;
+}
+
+asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
+{
+	if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTVCT) {
+		cntvct_read_handler(esr, regs);
+		return;
+	} else if ((esr & ESR_ELx_SYS64_ISS_SYS_OP_MASK) == ESR_ELx_SYS64_ISS_SYS_CNTFRQ) {
+		cntfrq_read_handler(esr, regs);
+		return;
+	}
+
+	do_undefinstr(regs);
 }
 
 long compat_arm_syscall(struct pt_regs *regs);

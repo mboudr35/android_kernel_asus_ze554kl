@@ -20,6 +20,11 @@
 
 #include "power.h"
 
+//ASUS_BSP +++ Debug for active wakelock before entering suspend
+void print_active_locks(void);
+extern bool g_resume_status;
+//ASUS_BSP --- Debug for active wakelock before entering suspend
+
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
  * if wakeup events are registered during or immediately before the transition.
@@ -262,12 +267,41 @@ static int device_wakeup_attach(struct device *dev, struct wakeup_source *ws)
 int device_wakeup_enable(struct device *dev)
 {
 	struct wakeup_source *ws;
+//ASUS_BSP +++ modify wakelock name to prevent battery historian parsing error
+	char name[100] = "";
+	int num = 100;
+	const char *wsName;
+	int i;
+//ASUS_BSP --- modify wakelock name to prevent battery historian parsing error
 	int ret;
+//ASUS_BSP +++ modify wakelock name to prevent battery historian parsing error
+	bool reNamed = false;
+//ASUS_BSP --- modify wakelock name to prevent battery historian parsing error
 
 	if (!dev || !dev->power.can_wakeup)
 		return -EINVAL;
-
-	ws = wakeup_source_register(dev_name(dev));
+//ASUS_BSP +++ modify wakelock name to prevent battery historian parsing error
+	wsName = dev_name(dev);
+	num = strlen(wsName);
+	if (num > 100) {
+		printk("%s: wakelock name is too long - %d\n", __func__, num);
+		num = 100;
+	}
+	for (i = 0; i < num; i++) {
+		if (wsName[i] == ',') {
+			name[i] = '.';
+			reNamed = true;
+		} else{
+			name[i] = wsName[i];
+		}
+	}
+	if (reNamed) {
+		printk("%s: rename - %s => %s\n", __func__, wsName, name);
+		ws = wakeup_source_register(name);
+	} else{
+		ws = wakeup_source_register(dev_name(dev));
+	}
+//ASUS_BSP --- modify wakelock name to prevent battery historian parsing error
 	if (!ws)
 		return -ENOMEM;
 
@@ -814,8 +848,9 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 	struct wakeup_source *ws, *last_active_ws = NULL;
 	int len = 0;
 	bool active = false;
+	int srcuidx;
 
-	rcu_read_lock();
+	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active && len < max) {
 			if (!active)
@@ -836,7 +871,7 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 				"Last active Wakeup Source: %s",
 				last_active_ws->name);
 	}
-	rcu_read_unlock();
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
 EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 
@@ -849,7 +884,7 @@ void pm_print_active_wakeup_sources(void)
 	srcuidx = srcu_read_lock(&wakeup_srcu);
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
-			pr_info("active wakeup source: %s\n", ws->name);
+			printk("[PM] pm_print_active_wakeup_sources(): %s\n", ws->name);
 			active = 1;
 		} else if (!active &&
 			   (!last_activity_ws ||
@@ -860,7 +895,7 @@ void pm_print_active_wakeup_sources(void)
 	}
 
 	if (!active && last_activity_ws)
-		pr_info("last active wakeup source: %s\n",
+		printk("[PM] last active wakeup source: %s\n",
 			last_activity_ws->name);
 	srcu_read_unlock(&wakeup_srcu, srcuidx);
 }
@@ -890,7 +925,7 @@ bool pm_wakeup_pending(void)
 	spin_unlock_irqrestore(&events_lock, flags);
 
 	if (ret) {
-		pr_info("PM: Wakeup pending, aborting suspend\n");
+		printk("[PM] pm_wakeup_pending(), aborting suspend\n");
 		pm_print_active_wakeup_sources();
 	}
 
@@ -930,6 +965,10 @@ void pm_system_irq_wakeup(unsigned int irq_number)
  * Return 'false' if the current number of wakeup events being processed is
  * nonzero.  Otherwise return 'true'.
  */
+//ASUS_BSP +++
+static bool g_is_print_active_locks_worker_init = false;
+static struct delayed_work print_active_locks_work;
+//ASUS_BSP ---
 bool pm_get_wakeup_count(unsigned int *count, bool block)
 {
 	unsigned int cnt, inpr;
@@ -943,7 +982,15 @@ bool pm_get_wakeup_count(unsigned int *count, bool block)
 			split_counters(&cnt, &inpr);
 			if (inpr == 0 || signal_pending(current))
 				break;
-
+/* Temporarily removed. It should be checked later for power consumption */
+//ASUS_BSP +++ Debug for active wakelock before entering suspend
+			if (!g_resume_status){
+				printk("[PM] pm_get_wakeup_count():try to suspend wakelock\n");
+				if (g_is_print_active_locks_worker_init) {
+					schedule_delayed_work(&print_active_locks_work, 0);
+				}
+			}
+//ASUS_BSP --- Debug for active wakelock before entering suspend
 			schedule();
 		}
 		finish_wait(&wakeup_count_wait_queue, &wait);
@@ -1082,6 +1129,43 @@ static int wakeup_sources_stats_show(struct seq_file *m, void *unused)
 	return 0;
 }
 
+//ASUS_BSP +++ Debug for active wakelock before entering suspend
+extern int pmsp_flag; /* kernel/kernel/power/suspend.c */
+extern void pmsp_print(void); /* /kernel/kernel/power/autosleep.c */
+extern void print_pm_cpuinfo(void);   /* dump cpuinfo defined kernel/kernel/power/autosleep.c */
+
+void print_active_locks(void)
+{
+	struct wakeup_source *ws;
+	int wl_active_cnt = 0;	//wakelock_active_cnt
+	int srcuidx;
+
+	srcuidx = srcu_read_lock(&wakeup_srcu);
+	list_for_each_entry_rcu(ws, &wakeup_sources, entry)
+	if (ws->active){
+		wl_active_cnt++;
+		ASUSEvtlog("[PM] active wake lock: %s\n", ws->name);
+		if (pmsp_flag == 1) {
+			if(strncmp(ws->name, "PowerManagerService", strlen("PowerManagerService")) == 0)
+				pmsp_print(); /*call pms_printer_func() to send uevent 0 or 1: kernel/kernel/power/autosleep.c*/
+				//dump cpuinfo
+				if( g_unattended_timeout >= PM_UNATTENDED_TIMEOUT_START * 8 ) {
+					print_pm_cpuinfo(); /*call pm_cpuinfo_func() */
+			}
+		}
+		pmsp_flag = 0;
+	}
+
+	if (wl_active_cnt == 0){
+		ASUSEvtlog("[PM] all wakelock are inactive\n");
+	}
+
+	srcu_read_unlock(&wakeup_srcu, srcuidx);
+	return;
+}
+EXPORT_SYMBOL(print_active_locks);
+//ASUS_BSP --- Debug for active wakelock before entering suspend
+
 static int wakeup_sources_stats_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, wakeup_sources_stats_show, NULL);
@@ -1103,3 +1187,19 @@ static int __init wakeup_sources_debugfs_init(void)
 }
 
 postcore_initcall(wakeup_sources_debugfs_init);
+
+//ASUS_BSP +++
+void print_active_locks_worker(struct work_struct *work)
+{
+	ASUSEvtlog("[PM] try to suspend wakelock\n");
+	print_active_locks();
+}
+static int __init print_active_locks_worker_init(void)
+{
+	printk("[PM]%s\n", __func__);
+	INIT_DELAYED_WORK(&print_active_locks_work, print_active_locks_worker);
+	g_is_print_active_locks_worker_init = true;
+	return 0;
+}
+postcore_initcall(print_active_locks_worker_init);
+//ASUS_BSP ---

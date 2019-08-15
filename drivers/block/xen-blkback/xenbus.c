@@ -413,7 +413,11 @@ static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
 		vbd->type |= VDISK_REMOVABLE;
 
 	q = bdev_get_queue(bdev);
+#ifdef BLOCK_WRITE_CACHE
+	if (q && test_bit(QUEUE_FLAG_WC, &q->queue_flags))
+#else
 	if (q && q->flush_flags)
+#endif
 		vbd->flush_support = true;
 
 	if (q && blk_queue_secdiscard(q))

@@ -2290,9 +2290,17 @@ static void xhci_add_in_port(struct xhci_hcd *xhci, unsigned int num_ports,
 				"xHCI 1.0: support USB2 software lpm");
 		xhci->sw_lpm_support = 1;
 		if (temp & XHCI_HLC) {
-			xhci_dbg_trace(xhci, trace_xhci_dbg_init,
+
+			/* Disable Xhci hardware Link Power Management
+			  * to improve host transmission performance and
+			  * connection stability.
+			  * Refer to  USB 2.0 xHCI 1.0 hardware LMP capability
+			  * section 7.2.2.1.3.2
+			  */
+
+			/*xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 					"xHCI 1.0: support USB2 hardware lpm");
-			xhci->hw_lpm_support = 1;
+			xhci->hw_lpm_support = 1; */
 		}
 	}
 

@@ -50,13 +50,18 @@
 				qcom,pon-type = <0>;
 				qcom,pull-up = <1>;
 				linux,code = <116>;
+				qcom,support-reset = <1>;
+				qcom,s1-timer = <10256>;
+				qcom,s2-timer = <10>;
+				qcom,s2-type = <4>;
+
 			};
 
-			qcom,pon_2 {
-				qcom,pon-type = <1>;
-				qcom,pull-up = <1>;
-				linux,code = <114>;
-			};
+			//qcom,pon_2 {
+				//qcom,pon-type = <1>;
+				//qcom,pull-up = <1>;
+				//linux,code = <114>;
+			//};
 		};
 
 		qcom,temp-alarm@2400 {
@@ -158,6 +163,7 @@
 		pm660_coincell: qcom,coincell@2800 {
 			compatible = "qcom,qpnp-coincell";
 			reg = <0x2800 0x100>;
+			qcom,charge-enable=<0>; //ASUS_BSP LiJen Ara HW not support
 		};
 
 		pm660_rtc: qcom,pm660_rtc {
@@ -312,6 +318,64 @@
 				qcom,fast-avg-setup = <0>;
 				qcom,cal-val = <0>;
 			};
+			
+			/* ASUS_BSP (ShowCai) +++ for thermal */
+			chan@52 {
+				label = "asus_skin_therm";
+				reg = <0x51>;
+				qcom,decimation = <2>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <2>;
+				qcom,hw-settle-time = <2>;
+				qcom,fast-avg-setup = <0>;
+			};
+			
+			chan@4b {
+				label = "asus_top_center_therm";
+				reg = <0x4d>;
+				qcom,decimation = <2>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <2>;
+				qcom,hw-settle-time = <2>;
+				qcom,fast-avg-setup = <0>;
+			};
+			
+			chan@53 {
+				label = "asus_bot_center_therm";
+				reg = <0x4e>;
+				qcom,decimation = <2>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <2>;
+				qcom,hw-settle-time = <2>;
+				qcom,fast-avg-setup = <0>;
+			};
+			
+			chan@4a {
+				label = "asus_pa_therm";
+				reg = <0x4f>;
+				qcom,decimation = <2>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <2>;
+				qcom,hw-settle-time = <2>;
+				qcom,fast-avg-setup = <0>;
+			};
+			
+			han@1e {
+				label = "asus_die_temp";
+				reg = <0x1d>;
+				qcom,decimation = <2>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "absolute";
+				qcom,scale-function = <3>;
+				qcom,hw-settle-time = <0>;
+				qcom,fast-avg-setup = <0>;
+				qcom,cal-val = <0>;
+			};
+			/* ASUS_BSP (ShowCai) --- for thermal */
 		};
 
 		pm660_charger: qcom,qpnp-smb2 {
@@ -337,6 +401,11 @@
 					= <3000000 2500000 2000000 1500000
 						1000000 500000>;
 
+			qcom,fcc-max-ua = <3000000>;
+			qcom,fv-max-uv = <4380000>;
+			qcom,usb-icl-ua = <1000000>;
+			qcom,float-option = <1>;
+			
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
 				interrupts =
@@ -472,7 +541,8 @@
 					  "msg-rx-discarded";
 
 			qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
-						 <9000 3000>; /* 9V @ 3A */
+						 <7500 2000>, /* 7.5V @ 2A */
+						 <9000 1670>; /* 9V @ 1.67A */
 		};
 
 		pm660_adc_tm: vadc@3400 {
@@ -555,6 +625,18 @@
 			qcom,fg-esr-timer-asleep = <256 256>;
 			qcom,fg-esr-timer-charging = <0 96>;
 			qcom,cycle-counter-en;
+
+//ASUS_BSP +++
+			qcom,fg-chg-term-current = <100>;
+			qcom,fg-sys-term-current = <(-150)>;
+			qcom,hold-soc-while-full;
+			qcom,linearize-soc; //ASUS_BSP
+			qcom,fg-force-load-profile;
+
+			qcom,fg-jeita-thresholds = <0 10 50 60>;
+			qcom,fg-jeita-hyst-temp = <3>;
+//ASUS_BSP ---
+
 			status = "okay";
 
 			qcom,fg-batt-soc@4000 {
@@ -638,20 +720,24 @@
 			qcom,pmic-revid = <&pm660_revid>;
 			qcom,pmic-misc = <&pm660_misc>;
 			qcom,misc-clk-trim-error-reg = <0xf3>;
+			qcom,timeout-ms = <120000>;
 			qcom,actuator-type = "lra";
 			qcom,play-mode = "direct";
-			qcom,vmax-mv = <3200>;
+			qcom,vmax-mv = <2088>;
 			qcom,ilim-ma = <800>;
 			qcom,wave-shape = "square";
-			qcom,wave-play-rate-us = <6667>;
+			qcom,wave-play-rate-us = <4215>; //237Hz (0x30D40 / 0x34B)
 			qcom,int-pwm-freq-khz = <505>;
 			qcom,sc-deb-cycles = <8>;
 			qcom,en-brake;
-			qcom,brake-pattern = [03 03 00 00];
+			qcom,brake-pattern = [02 02 02 02];
 			qcom,lra-high-z = "opt0";
-			qcom,lra-auto-res-mode = "qwd";
+			qcom,lra-auto-res-mode = "none";
 			qcom,lra-calibrate-at-eop = <0>;
-			qcom,correct-lra-drive-freq;
+//			qcom,correct-lra-drive-freq;
+//			qcom,perform-lra-auto-resonance-search;
+//			qcom,lra-hw-auto-resonance;
+			qcom,time-required-to-generate-back-emf-us = <5000>;
 		};
 	};
 };

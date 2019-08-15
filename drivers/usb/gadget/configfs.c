@@ -473,7 +473,6 @@ static int config_usb_cfg_unlink(
 	if (gi->udc_name)
 		unregister_gadget(gi);
 	WARN_ON(gi->udc_name);
-
 	list_for_each_entry(f, &cfg->func_list, list) {
 		if (f->fi == fi) {
 			list_del(&f->list);
@@ -744,7 +743,46 @@ static struct config_item_type config_desc_type = {
 
 GS_STRINGS_RW(gadget_strings, manufacturer);
 GS_STRINGS_RW(gadget_strings, product);
-GS_STRINGS_RW(gadget_strings, serialnumber);
+// ASUS_BSP +++ "Add ASUS SSN Support"
+//GS_STRINGS_RW(gadget_strings, serialnumber);
+static ssize_t gadget_strings_serialnumber_show(struct config_item *item, char *page)
+{
+	struct gadget_strings *gs = to_gadget_strings(item);
+	printk("%s %s\n", __func__, page);
+	return sprintf(page, "%s\n", gs->serialnumber ? : "");
+};
+
+static ssize_t gadget_strings_serialnumber_store(struct config_item *item, const char *page, size_t len)
+{
+	struct gadget_strings *gs = to_gadget_strings(item);
+	int ret;
+
+	printk("%s %s\n", __func__, page);
+	if(page[0] >= 0x30 && page[0] <= 0x5a) {
+		printk("%s valid\n", __func__);
+		ret = usb_string_copy(page, &gs->serialnumber);
+	} else {
+		printk("%s: page[0] check fail, use default value C4ATAS000000\n", __func__);
+		ret = usb_string_copy("C4ATAS000000", &gs->serialnumber);
+	}
+
+	if (ret)
+		return ret;	
+	return len;
+};
+
+static struct configfs_attribute gadget_strings_attr_serialnumber = {
+	.ca_name	= __stringify(serialnumber),
+#ifdef ASUS_FACTORY_BUILD
+	.ca_mode	= S_IRUGO | S_IWUGO,
+#else
+	.ca_mode	= S_IRUGO | S_IWUSR,
+#endif
+	.ca_owner	= THIS_MODULE,
+	.show		= gadget_strings_serialnumber_show,
+	.store		= gadget_strings_serialnumber_store,
+};
+// ASUS_BSP --- "Add ASUS SSN Support"
 
 static struct configfs_attribute *gadget_strings_langid_attrs[] = {
 	&gadget_strings_attr_manufacturer,
@@ -1287,6 +1325,7 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 	unsigned			i;
 	int				ret;
 
+	pr_info("[USB][CONFIGFS] %s +++\n", __func__);
 	/* the gi->lock is hold by the caller */
 	cdev->gadget = gadget;
 	set_gadget_data(gadget, cdev);
@@ -1389,7 +1428,10 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 			}
 			c->iConfiguration = s[0].id;
 		}
-
+		pr_info("[USB][CONFIGFS] Binding function:");
+		list_for_each_entry(f, &cfg->func_list, list) {
+			pr_info("[USB][CONFIGFS] %s\n", f->name);
+		}
 		list_for_each_entry_safe(f, tmp, &cfg->func_list, list) {
 			list_del(&f->list);
 			ret = usb_add_function(c, f);
@@ -1407,6 +1449,7 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 	}
 
 	usb_ep_autoconfig_reset(cdev->gadget);
+	pr_info("[USB][CONFIGFS] %s ---\n", __func__);
 	return 0;
 
 err_purge_funcs:

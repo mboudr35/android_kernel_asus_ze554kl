@@ -53,6 +53,8 @@ module_param(enable_debug, int, S_IRUGO | S_IWUSR);
 #define SHUTDOWN_ACK_MAX_LOOPS	100
 #define SHUTDOWN_ACK_DELAY_MS	100
 
+#include "linux/asusdebug.h"/*ASUS-BBSP Save SSR reason - Add SSR inform to ASUSEvtLog+*/
+
 /**
  * enum p_subsys_state - state of a subsystem (private)
  * @SUBSYS_NORMAL: subsystem is operating normally
@@ -304,6 +306,13 @@ static ssize_t system_debug_store(struct device *dev,
 	return orig_count;
 }
 
+/*ASUS-BBSP Modify for saving ramdump - devpath+++*/
+static ssize_t devpath_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%s\n", kobject_get_path(&(to_subsys(dev)->desc->dev->kobj), GFP_KERNEL));
+}
+/*ASUS-BBSP Modify for saving ramdump - devpath---*/
+
 int subsys_get_restart_level(struct subsys_device *dev)
 {
 	return dev->restart_level;
@@ -353,6 +362,7 @@ static struct device_attribute subsys_attrs[] = {
 	__ATTR(restart_level, 0644, restart_level_show, restart_level_store),
 	__ATTR(firmware_name, 0644, firmware_name_show, firmware_name_store),
 	__ATTR(system_debug, 0644, system_debug_show, system_debug_store),
+	__ATTR_RO(devpath),/*ASUS-BBSP Modify for saving ramdump - devpath+*/
 	__ATTR_NULL,
 };
 
@@ -369,6 +379,52 @@ module_param(enable_ramdumps, int, S_IRUGO | S_IWUSR);
 
 static int enable_mini_ramdumps;
 module_param(enable_mini_ramdumps, int, S_IRUGO | S_IWUSR);
+
+/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
+static char *ssr_no_dump = NULL;
+module_param(ssr_no_dump, charp, 0644);
+static char *ssr_panic = NULL;
+module_param(ssr_panic, charp, 0644);
+/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
+
+/*ASUS-BBSP Save SSR reason+++*/
+#define MAX_SSR_REASON_LEN (128)
+static char *ssr_reason = NULL;
+module_param(ssr_reason, charp, 0444);
+
+void subsys_save_reason(char *name, char *reason)
+{
+/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
+	if (strlen(ssr_panic) > 0) {
+		char *pch = strstr(ssr_panic, "\n");
+		if(pch != NULL)
+			strncpy(pch, "\0", 1);
+		if (strstr(reason, ssr_panic) != NULL)
+			panic("%s", reason);
+	}
+/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
+
+	strlcpy(ssr_reason, reason, MAX_SSR_REASON_LEN);
+	ASUSEvtlog("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Save SSR reason - Add SSR inform to ASUSEvtLog+*/
+	SubSysHealthRecord("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Save SSR reason - Add SSR inform to SubSysHealthRecord+*/
+}
+/*ASUS-BBSP Save SSR reason---*/
+
+/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
+int get_ssr_enable_ramdumps(void)
+{
+	if (strlen(ssr_no_dump) > 0) {
+		char *pch = strstr(ssr_no_dump, "\n");
+		if(pch != NULL)
+			strncpy(pch, "\0", 1);
+		if (strstr(ssr_reason, ssr_no_dump) != NULL) {
+			pr_err("[SSR] Skip ramdump for reason = %s, no_dump = %s", ssr_reason, ssr_no_dump);
+			return 0;
+		}
+	}
+	return 1;
+}
+/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
 
 struct workqueue_struct *ssr_wq;
 static struct class *char_class;
@@ -535,7 +591,7 @@ static void notify_each_subsys_device(struct subsys_device **list,
 			send_sysmon_notif(dev);
 
 		notif_data.crashed = subsys_get_crash_status(dev);
-		notif_data.enable_ramdump = is_ramdump_enabled(dev);
+		notif_data.enable_ramdump = (is_ramdump_enabled(dev) && get_ssr_enable_ramdumps());/*ASUS-BBSP Skip ramdump or panic in a specific reason+*/
 		notif_data.enable_mini_ramdumps = enable_mini_ramdumps;
 		notif_data.no_auth = dev->desc->no_auth;
 		notif_data.pdev = pdev;
@@ -634,7 +690,7 @@ static int subsystem_ramdump(struct subsys_device *dev, void *data)
 	const char *name = dev->desc->name;
 
 	if (dev->desc->ramdump)
-		if (dev->desc->ramdump(is_ramdump_enabled(dev), dev->desc) < 0)
+		if (dev->desc->ramdump((is_ramdump_enabled(dev) && get_ssr_enable_ramdumps()), dev->desc) < 0)/*ASUS-BBSP Skip ramdump or panic in a specific reason+*/
 			pr_warn("%s[%s:%d]: Ramdump failed.\n",
 				name, current->comm, current->pid);
 	dev->do_ramdump_on_put = false;
@@ -983,6 +1039,9 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 		return;
 	}
 
+	if (get_ssr_enable_ramdumps())/*ASUS-BBSP Skip ramdump or panic in a specific reason+*/
+	kobject_uevent(&(desc->dev->kobj), KOBJ_OFFLINE);/*ASUS-BBSP Modify for saving ramdump+*/
+
 	/*
 	 * It's necessary to take the registration lock because the subsystem
 	 * list in the SoC restart order will be traversed and it shouldn't be
@@ -1026,6 +1085,9 @@ err:
 
 	mutex_unlock(&soc_order_reg_lock);
 	mutex_unlock(&track->lock);
+
+	if (get_ssr_enable_ramdumps())/*ASUS-BBSP Skip ramdump or panic in a specific reason+*/
+	kobject_uevent(&(desc->dev->kobj), KOBJ_ONLINE);/*ASUS-BBSP Modify for saving ramdump+*/
 
 	spin_lock_irqsave(&track->s_lock, flags);
 	track->p_state = SUBSYS_NORMAL;
@@ -1800,6 +1862,13 @@ static int __init subsys_restart_init(void)
 			&panic_nb);
 	if (ret)
 		goto err_soc;
+
+	ssr_reason = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);/*ASUS-BBSP Save SSR reason+*/
+
+	/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
+	ssr_panic = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);
+	ssr_no_dump = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);
+	/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
 
 	return 0;
 

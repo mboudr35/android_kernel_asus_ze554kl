@@ -497,7 +497,7 @@ static int udc_bind_to_driver(struct usb_udc *udc, struct usb_gadget_driver *dri
 {
 	int ret;
 
-	dev_dbg(&udc->dev, "registering UDC driver [%s]\n",
+	dev_info(&udc->dev, "[USB][GADGET] registering UDC driver [%s]\n",
 			driver->function);
 
 	udc->driver = driver;

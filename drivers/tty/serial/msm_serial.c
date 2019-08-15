@@ -40,6 +40,12 @@
 #include <linux/of_device.h>
 #include <linux/wait.h>
 
+#ifndef ASUS_USER_BUILD
+#ifdef CONFIG_BOOTDBGUART
+extern bool g_bootdbguart_y;  //flag which indicates if uart is enabled
+#endif
+#endif
+
 #define UART_MR1			0x0000
 
 #define UART_MR1_AUTO_RFR_LEVEL0	0x3F
@@ -1877,6 +1883,14 @@ static struct platform_driver msm_platform_driver = {
 static int __init msm_serial_init(void)
 {
 	int ret;
+
+#ifndef ASUS_USER_BUILD
+#ifdef CONFIG_BOOTDBGUART
+	if (!g_bootdbguart_y) {
+		return 0;
+	}
+#endif
+#endif
 
 	ret = uart_register_driver(&msm_uart_driver);
 	if (unlikely(ret))

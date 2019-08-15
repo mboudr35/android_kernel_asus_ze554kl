@@ -30,6 +30,9 @@
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/syscore_ops.h>
 #include <linux/irqchip/msm-mpm-irq.h>
+//ASUS_BSP +++
+#include <linux/wakeup_reason.h>
+//ASUS_BSP ---
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
@@ -38,6 +41,12 @@
 
 #include "irq-gic-common.h"
 
+static uint32_t adsp_irq_continuous_count = 0;
+module_param_named(adsp_irq_continuous_count, adsp_irq_continuous_count, uint, S_IRUGO | S_IWUSR | S_IWGRP);
+
+//ASUS_BSP +++
+int gic_irq_cnt,gic_resume_irq[8];//[Power]Add these values to save IRQ's counts and number
+//ASUS_BSP ---
 struct redist_region {
 	void __iomem		*redist_base;
 	phys_addr_t		phys_base;
@@ -414,13 +423,50 @@ static int gic_suspend(void)
 	return 0;
 }
 
+//ASUS_BSP +++ Johnny yujoe [Qcom][PS][][ADD]Print first IP address log when IRQ 484
+static int rmnet_irq_flag_rx = 0;
+int rmnet_irq_flag_function_rx(void)
+{
+    if( rmnet_irq_flag_rx == 1 ) {
+        rmnet_irq_flag_rx = 0;
+        return 1;
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL(rmnet_irq_flag_function_rx);
+
+static int rmnet_irq_flag_rx_484 = 0; 
+int rmnet_irq_flag_function_rx_484(void)
+{
+    if( rmnet_irq_flag_rx_484 == 1 ) {
+        rmnet_irq_flag_rx_484 = 0; 
+        return 1;
+    }    
+
+    return 0;
+}
+EXPORT_SYMBOL(rmnet_irq_flag_function_rx_484);
+//ASUS_BSP --- Johnny yujoe [Qcom][PS][][ADD]Print first IP address log when IRQ 484
+
+
+#define ADSP_IRQ 189
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
 	unsigned int i;
 	u32 enabled;
 	u32 pending[32];
 	void __iomem *base = gic_data_dist_base(gic);
+	static bool adsp_previous_trigger = false;
+	bool adsp_current_trigger = false;
 
+//ASUS_BSP +++ [PM]reset IRQ count and IRQ number every time.
+	int j;
+	for (j = 0;j < 8; j++) {
+		gic_resume_irq[j]=0;
+	}
+	gic_irq_cnt=0;
+//ASUS_BSP --- [PM]reset IRQ count and IRQ number every time.
 	if (!msm_show_resume_irq_mask)
 		return;
 
@@ -442,8 +488,68 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
-		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
+//ASUS_BSP +++
+		printk("[PM] %s: IRQ=%d, i=%d triggered %s\n", __func__, irq, i, name);	/*print GIC_V3 irq number*/
+		log_wakeup_reason(irq);
+//ASUS_BSP ---
+
+		if(i == ADSP_IRQ) {
+			adsp_current_trigger = true;
+		}
+
+//ASUS_BSP +++ [PM]save IRQ's counts and number
+		if (gic_irq_cnt < 8) {
+			gic_resume_irq[gic_irq_cnt] = i;
+		}
+		gic_irq_cnt++;
+//ASUS_BSP --- [PM]save IRQ's counts and number
+                //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+                //printk("%s: [data] yujoe test i = %d \n", __func__,i);
+                //if( (i + gic->irq_offset) == 57 ){
+                if(i == 57){
+                    rmnet_irq_flag_rx = 1;
+                    //printk("%s: [data] Johnny 57 \n", __func__);
+                }
+                //ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+
+                //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 484
+                //if( (i + gic->irq_offset) == 260 ){
+                if(i == 484){
+                    rmnet_irq_flag_rx_484 = 1;
+                    //printk("%s: [data] Yujoe 484 \n", __func__);
+                }
+                //ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 484
 	}
+
+	if(adsp_current_trigger) {
+		if(adsp_previous_trigger) {
+			/**********************************************************************
+			 *	Continuous irq 189 triggered by ADSP, increase ADSP irq counter
+			 **********************************************************************/
+
+			adsp_irq_continuous_count++;
+			printk("[PM] %s: Increase ADSP irq counter, irq: %d, adsp_irq_continuous_count: %u\n", __func__, i, adsp_irq_continuous_count);
+		}
+	} else {
+		adsp_irq_continuous_count = 0;
+
+		if(adsp_previous_trigger){
+			/**********************************************************************
+			 *	Irq 189 does not continuously trigger resume, reset ADSP irq counter
+			 **********************************************************************/
+
+			printk("[PM] %s: Irq 189 does not continuously trigger resume. Reset ADSP irq counter, adsp_irq_continuous_count: %u\n",
+					__func__, adsp_irq_continuous_count);
+		}
+	}
+
+	adsp_previous_trigger = adsp_current_trigger;
+	
+//ASUS_BSP +++ [PM]Save maxmum count to 8
+	if (gic_irq_cnt >= 8) {
+		gic_irq_cnt = 7;
+	}
+//ASUS_BSP --- [PM]Save maxmum count to 8
 }
 
 static void gic_resume_one(struct gic_chip_data *gic)

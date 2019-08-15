@@ -40,6 +40,12 @@ typedef int __bitwise suspend_state_t;
 #define PM_SUSPEND_MIN		PM_SUSPEND_FREEZE
 #define PM_SUSPEND_MAX		((__force suspend_state_t) 4)
 
+//ASUS_BSP +++ Debug for active wakelock before entering suspend
+#define PM_UNATTENDED_TIMEOUT   1000*60*10		//10min
+#define PM_UNATTENDED_TIMEOUT_START   1000*8		//8 seconds
+extern unsigned int g_unattended_timeout;
+//ASUS_BSP --- Debug for active wakelock before entering suspend
+
 enum suspend_stat_step {
 	SUSPEND_FREEZE = 1,
 	SUSPEND_PREPARE,

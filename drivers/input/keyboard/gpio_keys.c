@@ -345,6 +345,15 @@ static struct attribute_group gpio_keys_attr_group = {
 	.attrs = gpio_keys_attrs,
 };
 
+unsigned int b_press = 0; //ASUS BSP : Eason
+//thomas ++ for ramdump
+unsigned int vol_up_press = 0;
+unsigned int vol_down_press_count = 0;
+extern void set_dload_mode(int on);
+extern void msm_set_restart_mode(int mode);
+extern int download_mode;
+extern int g_QPST_property;
+
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -353,6 +362,34 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	int state;
 
 	state = (__gpio_get_value(button->gpio) ? 1 : 0) ^ button->active_low;
+	printk("[Keys][gpio_keys.c] keycode=%d, state=%s\n",
+		button->code, state?"press":"release");  //ASUS BSP PeterYeh +++
+
+	if (button->code == 115){
+		if (state == 1) {
+			vol_up_press = 1;
+		}
+		else {
+			printk("[Keys][gpio_keys.c] keycode(115) count = %d\n", vol_down_press_count);
+			vol_up_press = 0;
+			vol_down_press_count = 0;
+		}
+	}
+	if (vol_up_press) {
+		if (button->code == 114){
+			if (state == 1)
+				vol_down_press_count++;
+		}
+		if (vol_down_press_count == 10) {
+			if(g_QPST_property == 1) {
+				download_mode = 1;
+				set_dload_mode(download_mode);
+				msm_set_restart_mode(download_mode);
+				panic("special panic...\r\n");
+			}
+		}
+	}
+
 	if (state < 0) {
 		dev_err(input->dev.parent, "failed to get gpio state\n");
 		return;

@@ -24,7 +24,7 @@
 #include <linux/mmc/pm.h>
 #include <linux/mmc/ring_buffer.h>
 
-#define MMC_AUTOSUSPEND_DELAY_MS	3000
+#define MMC_AUTOSUSPEND_DELAY_MS	20000
 
 struct mmc_ios {
 	unsigned int	clock;			/* clock rate */
@@ -579,6 +579,13 @@ struct mmc_host {
 	bool perf_enable;
 #endif
 	struct mmc_trace_buffer trace_buf;
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+	bool suspendtest;
+	unsigned int suspendcnt;
+	unsigned int suspend_datasz;
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 	enum dev_state dev_status;
 	bool			wakeup_on_idle;
 	struct mmc_cmdq_context_info	cmdq_ctx;

@@ -43,6 +43,7 @@
 
 #include <generated/timeconst.h>
 #include "timekeeping.h"
+#include <linux/rtc.h>
 
 /*
  * The timezone where the local system is located.  Used as a default by some
@@ -114,6 +115,34 @@ SYSCALL_DEFINE2(gettimeofday, struct timeval __user *, tv,
 	}
 	return 0;
 }
+
+/* ASUS_BSP (ShowCai) +++ Add Event log when set time +++ */
+static void asus_get_current_rtc_time(struct rtc_time *tm){
+	struct timespec tmp_time;
+	
+	getnstimeofday(&tmp_time);
+	tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+	rtc_time_to_tm(tmp_time.tv_sec, tm);
+}
+
+static void asus_show_time(struct rtc_time *ori_tm, struct rtc_time *new_tm){
+
+	ASUSEvtlog("[UTS] RTC update: Current Datetime: %04d-%02d-%02d %02d:%02d:%02d,Update Datetime: %04d-%02d-%02d %02d:%02d:%02d\n",
+                        ori_tm->tm_year + 1900,
+                        ori_tm->tm_mon + 1,
+                        ori_tm->tm_mday,
+                        ori_tm->tm_hour,
+                        ori_tm->tm_min,
+                        ori_tm->tm_sec,
+                        new_tm->tm_year + 1900,
+                        new_tm->tm_mon + 1,
+                        new_tm->tm_mday,
+                        new_tm->tm_hour,
+                        new_tm->tm_min,
+                        new_tm->tm_sec);
+
+}
+/* ASUS_BSP (ShowCai) --- Show Add Event log when set time --- */
 
 /*
  * Indicates if there is an offset between the system clock and the hardware
@@ -196,6 +225,14 @@ SYSCALL_DEFINE2(settimeofday, struct timeval __user *, tv,
 	struct timeval user_tv;
 	struct timespec	new_ts;
 	struct timezone new_tz;
+	/* ASUS_BSP (ShowCai) +++ Show Add Event log when set time +++ */
+	int rc = 0;
+	struct rtc_time ori_tm, new_tm, usr_tm;
+	/* ASUS_BSP (ShowCai) --- Show Add Event log when set time --- */
+	
+	/* ASUS_BSP (ShowCai) +++ Show Add Event log when set time +++ */
+	asus_get_current_rtc_time(&ori_tm);
+	/* ASUS_BSP (ShowCai) --- Show Add Event log when set time --- */
 
 	if (tv) {
 		if (copy_from_user(&user_tv, tv, sizeof(*tv)))
@@ -206,13 +243,31 @@ SYSCALL_DEFINE2(settimeofday, struct timeval __user *, tv,
 
 		new_ts.tv_sec = user_tv.tv_sec;
 		new_ts.tv_nsec = user_tv.tv_usec * NSEC_PER_USEC;
+		
+		/* ASUS_BSP (ShowCai) +++ Show Add Event log when set time +++ */
+		rtc_time_to_tm(new_ts.tv_sec, &usr_tm);
+		printk("[UTS] User update time: %04d-%02d-%02d %02d:%02d:%02d\n",
+                        usr_tm.tm_year + 1900,
+                        usr_tm.tm_mon + 1,
+                        usr_tm.tm_mday,
+                        usr_tm.tm_hour,
+                        usr_tm.tm_min,
+                        usr_tm.tm_sec);
+		/* ASUS_BSP (ShowCai) --- Show Add Event log when set time --- */
 	}
 	if (tz) {
 		if (copy_from_user(&new_tz, tz, sizeof(*tz)))
 			return -EFAULT;
 	}
 
-	return do_sys_settimeofday(tv ? &new_ts : NULL, tz ? &new_tz : NULL);
+	/* ASUS_BSP (ShowCai) +++ Show Add Event log when set time +++ */
+	//return do_sys_settimeofday(tv ? &new_ts : NULL, tz ? &new_tz : NULL);
+	
+	rc = do_sys_settimeofday(tv ? &new_ts : NULL, tz ? &new_tz : NULL);
+	asus_get_current_rtc_time(&new_tm);
+	asus_show_time(&ori_tm, &new_tm);
+	return rc;
+	/* ASUS_BSP (ShowCai) --- Show Add Event log when set time --- */
 }
 
 SYSCALL_DEFINE1(adjtimex, struct timex __user *, txc_p)

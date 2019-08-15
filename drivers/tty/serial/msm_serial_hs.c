@@ -77,6 +77,8 @@
 #define UART_DMA_DESC_NR 8
 #define BUF_DUMP_SIZE 32
 
+static int sys_suspend_noirq_cnt;
+
 /* If the debug_mask gets set to FATAL_LEV,
  * a fatal error has happened and further IPC logging
  * is disabled so that this problem can be detected
@@ -3227,6 +3229,13 @@ static void msm_hs_pm_suspend(struct device *dev)
 		goto err_suspend;
 	mutex_lock(&msm_uport->mtx);
 
+	if (msm_uport->pm_state == MSM_HS_PM_SUSPENDED) {
+		MSM_HS_WARN("%s():Request to suspend when suspended",
+			__func__);
+		mutex_unlock(&msm_uport->mtx);
+		return;
+	}
+
 	client_count = atomic_read(&msm_uport->client_count);
 	msm_uport->pm_state = MSM_HS_PM_SUSPENDED;
 	msm_hs_resource_off(msm_uport);
@@ -3268,8 +3277,10 @@ static int msm_hs_pm_resume(struct device *dev)
 
 	mutex_lock(&msm_uport->mtx);
 	client_count = atomic_read(&msm_uport->client_count);
-	if (msm_uport->pm_state == MSM_HS_PM_ACTIVE)
+	if (msm_uport->pm_state == MSM_HS_PM_ACTIVE) {
+		sys_suspend_noirq_cnt = 0;
 		goto exit_pm_resume;
+	}
 	if (!atomic_read(&msm_uport->client_req_state))
 		disable_wakeup_interrupt(msm_uport);
 
@@ -3290,6 +3301,7 @@ static int msm_hs_pm_resume(struct device *dev)
 	}
 	obs_manage_irq(msm_uport, true);
 	msm_uport->pm_state = MSM_HS_PM_ACTIVE;
+	sys_suspend_noirq_cnt = 0;
 	msm_hs_resource_on(msm_uport);
 
 	LOG_USR_MSG(msm_uport->ipc_msm_hs_pwr_ctxt,
@@ -3304,14 +3316,10 @@ static int msm_hs_pm_sys_suspend_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct msm_hs_port *msm_uport = get_matching_hs_port(pdev);
-	enum msm_hs_pm_state prev_pwr_state;
 	int clk_cnt, client_count, ret = 0;
 
 	if (IS_ERR_OR_NULL(msm_uport))
 		return -ENODEV;
-
-	mutex_lock(&msm_uport->mtx);
-
 	/*
 	 * If there is an active clk request or an impending userspace request
 	 * fail the suspend callback.
@@ -3320,18 +3328,37 @@ static int msm_hs_pm_sys_suspend_noirq(struct device *dev)
 	client_count = atomic_read(&msm_uport->client_count);
 	if (msm_uport->pm_state == MSM_HS_PM_ACTIVE) {
 		MSM_HS_WARN("%s:Fail Suspend.clk_cnt:%d,clnt_count:%d\n",
-				 __func__, clk_cnt, client_count);
-		ret = -EBUSY;
-		goto exit_suspend_noirq;
-	}
+				__func__, clk_cnt, client_count);
 
-	prev_pwr_state = msm_uport->pm_state;
-	msm_uport->pm_state = MSM_HS_PM_SYS_SUSPENDED;
-	LOG_USR_MSG(msm_uport->ipc_msm_hs_pwr_ctxt,
-		"%s:PM State:Sys-Suspended client_count %d\n", __func__,
-								client_count);
+		if (clk_cnt == 0 && client_count == 0)
+			sys_suspend_noirq_cnt++;
+		/*Force suspend only in second attempt, due to autosuspend
+		 */
+		if (sys_suspend_noirq_cnt >= 2) {
+			mutex_lock(&msm_uport->mtx);
+			msm_uport->pm_state = MSM_HS_PM_SYS_SUSPENDED;
+			mutex_unlock(&msm_uport->mtx);
+
+			msm_hs_pm_suspend(dev);
+			/*
+			 * Synchronize RT-pm and system-pm, RT-PM thinks that
+			 * we are active. The three calls below let the RT-PM
+			 * know that we are suspended already without calling
+			 * suspend callback
+			 */
+			pm_runtime_disable(dev);
+			pm_runtime_set_suspended(dev);
+			pm_runtime_enable(dev);
+			sys_suspend_noirq_cnt = 0;
+			LOG_USR_MSG(msm_uport->ipc_msm_hs_pwr_ctxt,
+				"%s:PM State:Sys-Suspended client_count %d\n",
+				__func__, client_count);
+		} else {
+			ret = -EBUSY;
+			goto exit_suspend_noirq;
+		}
+	}
 exit_suspend_noirq:
-	mutex_unlock(&msm_uport->mtx);
 	return ret;
 };
 

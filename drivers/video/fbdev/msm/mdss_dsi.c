@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,6 +36,20 @@
 #include "mdss_dba_utils.h"
 
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
+
+//ASUS BSP Display +++
+//#define PANEL_SLEEP_MODE_ENABLE 0
+
+//#if PANEL_SLEEP_MODE_ENABLE
+static bool first_panel_power_on = true;
+//#endif
+struct mdss_panel_data *g_mdss_pdata;
+//ASUS BSP Display ---
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+extern int fts_ts_suspend(void);
+extern bool fts_gesture_check(void);
+extern bool asus_rmi4_gesture_check(void);
+#endif
 
 /* Master structure to hold all the information about the DSI/panel */
 static struct mdss_dsi_data *mdss_dsi_res;
@@ -367,6 +381,14 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	bool gesture_en = false;
+
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+	if (g_asus_lcdID == TITAN_LCD_TM)
+		gesture_en = fts_gesture_check();
+	else
+		gesture_en = asus_rmi4_gesture_check();
+#endif
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -377,21 +399,48 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	ret = mdss_dsi_panel_reset(pdata, 0);
-	if (ret) {
-		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
-		ret = 0;
+	pr_err("[Display] %s: +++\n", __func__);
+
+/*#if PANEL_SLEEP_MODE_ENABLE
+	if (g_asus_lcdID == TITAN_LCD_TM) {
+#endif*/
+
+	//don't pull reset low for both BOE & TM panel of Titan
+#if defined(ASUS_ZE602KL_PROJECT) || defined(ASUS_ZE602KL_BUILD)
+	if (!gesture_en) {
+		ret = mdss_dsi_panel_reset(pdata, 0);
+		if (ret) {
+			pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
+			ret = 0;
+		}
 	}
+#endif
+
+	if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
+		gpio_free(ctrl_pdata->disp_en_gpio);
+	}
+	gpio_free(ctrl_pdata->rst_gpio);
+	if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio)) {
+		gpio_free(ctrl_pdata->lcd_mode_sel_gpio);
+	}
+/*#if PANEL_SLEEP_MODE_ENABLE
+	}
+#endif*/
 
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
 
-	ret = msm_dss_enable_vreg(
-		ctrl_pdata->panel_power_data.vreg_config,
-		ctrl_pdata->panel_power_data.num_vreg, 0);
-	if (ret)
-		pr_err("%s: failed to disable vregs for %s\n",
-			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+//#if !PANEL_SLEEP_MODE_ENABLE
+	if (!gesture_en) {
+		ret = msm_dss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 0);
+		if (ret)
+			pr_err("%s: failed to disable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+	}
+//#endif
+	pr_err("[Display] %s: ---\n", __func__);
 
 end:
 	return ret;
@@ -401,6 +450,16 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	bool gesture_en = false;
+
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+	if (!first_panel_power_on) {
+		if (g_asus_lcdID == TITAN_LCD_TM)
+			gesture_en = fts_gesture_check();
+		else
+			gesture_en = asus_rmi4_gesture_check();
+	}
+#endif
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -410,6 +469,12 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	pr_err("[Display] %s: +++\n", __func__);
+
+/*#if PANEL_SLEEP_MODE_ENABLE
+    if (first_panel_power_on) {
+#endif*/
+	if (first_panel_power_on || !gesture_en) {
 	ret = msm_dss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 1);
@@ -419,23 +484,45 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 		return ret;
 	}
 
+	}
+/*#if PANEL_SLEEP_MODE_ENABLE
+	}
+#endif*/
+
 	/*
 	 * If continuous splash screen feature is enabled, then we need to
 	 * request all the GPIOs that have already been configured in the
 	 * bootloader. This needs to be done irresepective of whether
 	 * the lp11_init flag is set or not.
 	 */
-	if (pdata->panel_info.cont_splash_enabled ||
-		!pdata->panel_info.mipi.lp11_init) {
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+	if (g_asus_lcdID == TITAN_LCD_TM && (pdata->panel_info.cont_splash_enabled ||
+		!pdata->panel_info.mipi.lp11_init)) {
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
-
 		ret = mdss_dsi_panel_reset(pdata, 1);
 		if (ret)
 			pr_err("%s: Panel reset failed. rc=%d\n",
 					__func__, ret);
 	}
+#else
+	if ((pdata->panel_info.cont_splash_enabled ||
+		!pdata->panel_info.mipi.lp11_init)) {
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
+			pr_debug("reset enable: pinctrl not enabled\n");
+		ret = mdss_dsi_panel_reset(pdata, 1);
+		if (ret)
+			pr_err("%s: Panel reset failed. rc=%d\n",
+					__func__, ret);
+	}
+#endif
 
+	if (first_panel_power_on)
+		first_panel_power_on = false;
+/*#if PANEL_SLEEP_MODE_ENABLE
+    first_panel_power_on = false;
+#endif*/
+	pr_err("[Display] %s: ---\n", __func__);
 	return ret;
 }
 
@@ -760,7 +847,7 @@ static ssize_t mdss_dsi_cmd_state_read(struct file *file, char __user *buf,
 	if (blen < 0)
 		return 0;
 
-	if (copy_to_user(buf, buffer, blen))
+	if (copy_to_user(buf, buffer, min(count, (size_t)blen+1)))
 		return -EFAULT;
 
 	*ppos += blen;
@@ -1346,6 +1433,11 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 	mdss_dsi_clamp_phy_reset_config(ctrl_pdata, false);
 	mdss_dsi_clk_ctrl(ctrl_pdata, ctrl_pdata->dsi_clk_handle,
 			  MDSS_DSI_CORE_CLK, MDSS_DSI_CLK_OFF);
+	msleep(10);
+
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+	fts_ts_suspend();
+#endif
 
 panel_power_ctrl:
 	ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
@@ -1560,11 +1652,19 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	 * Issue hardware reset line after enabling the DSI clocks and data
 	 * data lanes for LP11 init
 	 */
+#if defined(ASUS_ZE554KL_BUILD) || defined(ASUS_ZE554KL_PROJECT)
+	if (g_asus_lcdID == TITAN_LCD_TM && mipi->lp11_init) {
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
+			pr_debug("reset enable: pinctrl not enabled\n");
+		mdss_dsi_panel_reset(pdata, 1);
+	}
+#else
 	if (mipi->lp11_init) {
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
 		mdss_dsi_panel_reset(pdata, 1);
 	}
+#endif
 
 	if (mipi->init_delay)
 		usleep_range(mipi->init_delay, mipi->init_delay);
@@ -2920,6 +3020,10 @@ static struct device_node *mdss_dsi_pref_prim_panel(
  *
  * returns pointer to panel node on success, NULL on error.
  */
+
+int g_asus_lcdID = -1;
+EXPORT_SYMBOL(g_asus_lcdID);
+
 static struct device_node *mdss_dsi_find_panel_of_node(
 		struct platform_device *pdev, char *panel_cfg)
 {
@@ -2986,6 +3090,19 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 		}
 		pr_info("%s: cmdline:%s panel_name:%s\n",
 			__func__, panel_cfg, panel_name);
+
+		if (strcmp("qcom,mdss_dsi_tm5p5_r63350_1080p_video", panel_name) == 0 ) {
+			g_asus_lcdID = AQU_LCD_TM;
+			printk("[Display] LCD ID = AQU TM\n");
+		} else if (strcmp("qcom,mdss_dsi_boe_td4300_1080p_video", panel_name) == 0 ) {
+			g_asus_lcdID = AQU_LCD_BOE;
+			printk("[Display] LCD ID = AQU BOE\n");
+		} else if (strcmp("qcom,mdss_dsi_titan_tm_1080p_video", panel_name) == 0 ) {
+			g_asus_lcdID = TITAN_LCD_TM;
+			printk("[Display] LCD ID = TITAN TM\n");
+		}
+		printk("[Display] g_asus_lcdID = %d\n" , g_asus_lcdID);
+
 		if (!strcmp(panel_name, NONE_PANEL))
 			goto exit;
 
@@ -4506,6 +4623,8 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 
 	panel_debug_register_base("panel",
 		ctrl_pdata->ctrl_base, ctrl_pdata->reg_size);
+
+	g_mdss_pdata = &(ctrl_pdata->panel_data); //ASUS BSP Display
 
 	pr_debug("%s: Panel data initialized\n", __func__);
 	return 0;

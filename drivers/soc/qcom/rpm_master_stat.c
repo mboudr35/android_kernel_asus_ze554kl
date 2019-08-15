@@ -52,6 +52,9 @@
 
 static DEFINE_MUTEX(msm_rpm_master_stats_mutex);
 
+static uint32_t adsp_sleep_count = 0;
+module_param_named(adsp_sleep_count, adsp_sleep_count, uint, S_IRUGO | S_IWUSR | S_IWGRP);
+
 struct msm_rpm_master_stats {
 	uint32_t active_cores;
 	uint32_t numshutdowns;
@@ -259,6 +262,131 @@ static int msm_rpm_master_copy_stats(
 	return RPM_MASTERS_BUF_LEN - count;
 }
 
+//ASUS_BSP +++
+static void asus_rpm_master_copy_stats(
+		struct msm_rpm_master_stats_private_data *prvdata, int master_cnt, uint32_t *count, uint32_t *active)
+{
+	struct msm_rpm_master_stats_platform_data *pdata;
+	static DEFINE_MUTEX(msm_rpm_master_stats_mutex);
+
+	mutex_lock(&msm_rpm_master_stats_mutex);
+
+	pdata = prvdata->platform_data;
+	if (prvdata->platform_data->version == 2) {
+		*count = readl_relaxed(prvdata->reg_base +
+				(master_cnt * pdata->master_offset +
+				offsetof(struct msm_rpm_master_stats,
+				xo_count)));
+
+		*active = readl_relaxed(prvdata->reg_base +
+			(master_cnt * pdata->master_offset) +
+			offsetof(struct msm_rpm_master_stats, active_cores));
+	} else{
+		printk("[RPM][ERR]%s: version error: %u\n", __func__, prvdata->platform_data->version);
+	}
+	mutex_unlock(&msm_rpm_master_stats_mutex);
+}
+static struct msm_rpm_master_stats_platform_data *g_pdata;
+static struct msm_rpm_master_stats_private_data *g_prvdata;
+static int asus_rpm_info_init(void)
+{
+	struct msm_rpm_master_stats_private_data *prvdata;
+	struct msm_rpm_master_stats_platform_data *pdata;
+	pdata = g_pdata;
+
+	g_prvdata =
+		kzalloc(sizeof(struct msm_rpm_master_stats_private_data),
+			GFP_KERNEL);
+
+	if (!g_prvdata)
+		return -ENOMEM;
+	prvdata = g_prvdata;
+
+	prvdata->reg_base = ioremap(pdata->phys_addr_base,
+						pdata->phys_size);
+	if (!prvdata->reg_base) {
+		kfree(g_prvdata);
+		prvdata = NULL;
+		printk("[RPM][ERR]%s: ERROR could not ioremap start=%pa, len=%u\n",
+			__func__, &pdata->phys_addr_base,
+			pdata->phys_size);
+		return -EBUSY;
+	}
+
+	prvdata->len = 0;
+	prvdata->num_masters = pdata->num_masters;
+	prvdata->master_names = pdata->masters;
+	prvdata->platform_data = pdata;
+	return 0;
+}
+void asus_rpm_info_deinit(void)
+{
+	struct msm_rpm_master_stats_private_data *private = g_prvdata;
+	if (g_prvdata) {
+		if (private->reg_base) {
+			iounmap(private->reg_base);
+		}
+		kfree(g_prvdata);
+	}
+}
+#define MAX_NUM_MASTERS 10
+void asus_rpmMaster_info(int tag)
+{
+	struct msm_rpm_master_stats_private_data *prvdata;
+	struct msm_rpm_master_stats_platform_data *pdata;
+	static uint32_t l_previousCount[MAX_NUM_MASTERS], l_previousActive[MAX_NUM_MASTERS];
+	uint32_t l_currentCount[MAX_NUM_MASTERS], l_currentActive[MAX_NUM_MASTERS];
+	static uint32_t adsp_previous_xo_count = 0;
+	u32 l_num_masters = MAX_NUM_MASTERS;
+	int i = 0;
+	if (g_prvdata) {
+		prvdata = g_prvdata;
+		if (!prvdata) {
+			return;
+		}
+		pdata = prvdata->platform_data;
+		if (!pdata) {
+			return;
+		}
+		if (prvdata->num_masters < l_num_masters) {
+			l_num_masters = prvdata->num_masters;
+		}
+		for (i = 0; i < l_num_masters; i++) {
+			if (tag == 1) {
+				asus_rpm_master_copy_stats(prvdata, i, &l_currentCount[i], &l_currentActive[i]);
+				if (!strncmp(GET_MASTER_NAME(i, prvdata), "APSS", sizeof("APSS"))) {
+					if (l_currentCount[i] == l_previousCount[i]) {
+						printk("[RPM]%s: %s - xo_count doesn't increase: %u\n", __func__, GET_MASTER_NAME(i, prvdata), l_currentCount[i]);
+					}
+				} else if (!strncmp(GET_MASTER_NAME(i, prvdata), "ADSP", sizeof("ADSP"))) {
+					if (l_currentCount[i] == adsp_previous_xo_count) {
+						printk("[RPM]%s: %s - xo_count doesn't increase: %u\n", __func__, GET_MASTER_NAME(i, prvdata), l_currentCount[i]);
+						adsp_sleep_count++;
+						printk("[RPM]%s: %s - Increase ADSP sleep counter: %u\n", __func__, GET_MASTER_NAME(i, prvdata), adsp_sleep_count);
+					} else {
+						adsp_sleep_count = 0;
+						printk("[RPM]%s: %s - xo_count changed! Reset ADSP sleep counter: %u\n", __func__, GET_MASTER_NAME(i, prvdata), adsp_sleep_count);
+					}
+
+					adsp_previous_xo_count = l_currentCount[i];
+				} else {
+					if (l_currentCount[i] != l_previousCount[i] || l_currentActive[i] || l_previousActive[i]) {
+						printk("[RPM]%s: %s - xo_count: %u => %u, active_cores: %u => %u\n", __func__, 
+							GET_MASTER_NAME(i, prvdata), l_previousCount[i], l_currentCount[i], l_previousActive[i], l_currentActive[i]);
+					}
+				}
+				printk("[RPM][debug]%s: %s - xo_count: %u => %u, active_cores: %u => %u\n", __func__, 
+					GET_MASTER_NAME(i, prvdata), l_previousCount[i], l_currentCount[i], l_previousActive[i], l_currentActive[i]);
+			} else{
+				asus_rpm_master_copy_stats(prvdata, i, &l_previousCount[i], &l_previousActive[i]);
+			}
+		}
+	} else{
+		printk("[RPM][ERR]%s: initial failed!\n", __func__);
+	}
+}
+//ASUS_BSP ---
+
 static ssize_t msm_rpm_master_stats_file_read(struct file *file,
 				char __user *bufu, size_t count, loff_t *ppos)
 {
@@ -434,10 +562,14 @@ static  int msm_rpm_master_stats_probe(struct platform_device *pdev)
 
 	pdata->phys_addr_base = res->start;
 	pdata->phys_size = resource_size(res);
-
+//ASUS_BSP +++
+	g_pdata = pdata;
+//ASUS_BSP ---
 	dent = debugfs_create_file("rpm_master_stats", S_IRUGO, NULL,
 					pdata, &msm_rpm_master_stats_fops);
-
+//ASUS_BSP +++
+	asus_rpm_info_init();
+//ASUS_BSP ---
 	if (!dent) {
 		dev_err(&pdev->dev, "%s: ERROR debugfs_create_file failed\n",
 								__func__);
@@ -453,6 +585,9 @@ static int msm_rpm_master_stats_remove(struct platform_device *pdev)
 	struct dentry *dent;
 
 	dent = platform_get_drvdata(pdev);
+//ASUS_BSP +++
+	asus_rpm_info_deinit();
+//ASUS_BSP ---
 	debugfs_remove(dent);
 	platform_set_drvdata(pdev, NULL);
 	return 0;

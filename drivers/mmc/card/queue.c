@@ -23,6 +23,13 @@
 #include <linux/mmc/host.h>
 #include <linux/sched/rt.h>
 #include "queue.h"
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPENDTEST
+#include "../core/mmc_ops.h"
+#include "../core/core.h"
+#include <linux/delay.h>
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 
 #define MMC_QUEUE_BOUNCESZ	65536
 
@@ -32,6 +39,11 @@
  * manage to keep the high write throughput.
  */
 #define DEFAULT_NUM_REQS_TO_START_PACK 17
+
+//ASUS_BSP Deeo : mmc suspend stress test +++
+extern int mmc_runtime_suspend_test(struct mmc_host *host);
+extern int mmc_runtime_resume_test(struct mmc_host *host);
+//ASUS_BSP Deeo : mmc suspend stress test ---
 
 /*
  * Prepare a MMC request. This just filters out odd stuff.
@@ -55,6 +67,53 @@ static int mmc_prep_request(struct request_queue *q, struct request *req)
 
 	return BLKPREP_OK;
 }
+
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+
+static int mmc_run_set_suspendtest(struct mmc_queue *mq)
+{
+	int err;
+
+	if (mq->card->host->suspend_datasz) {
+		if (mq->card->sectors_changed < mq->card->host->suspend_datasz*2)     // 1 sector= 512 byte
+			return 0;
+	} else {
+		mq->card->host->suspend_datasz = 100*1024;     //default value: 100MB
+		return 0;
+	}
+
+	//printk("[EMMC] mq->card->sectors_changed %d\n", mq->card->sectors_changed);
+	//printk("[EMMC] mq->card->host->suspend_datasz %d\n", mq->card->host->suspend_datasz);
+
+	//ASUS_BSP Deeo : check active_reqs to avoid bkops error while suspend +++
+	if (mmc_card_cmdq(mq->card->host->card)) {
+		if (mq->card->host->cmdq_ctx.active_reqs) {
+			//printk("[EMMC] mq->card->host->cmdq_ctx.active_reqs %lu\n", mq->card->host->cmdq_ctx.active_reqs);
+			printk("[EMMC] skip this time mmc_run_set_suspendtest!!! cnt:%d\n", mq->card->host->suspendcnt);
+			return 0;
+		}
+	}
+	//ASUS_BSP Deeo : check active_reqs to avoid bkops error while suspend ---
+
+	mq->card->sectors_changed = 0;
+	mq->card->host->suspendcnt++;
+
+	err = mmc_runtime_suspend_test(mq->card->host);
+	if (err < 0)
+		pr_err("%s: %s: suspend host failed: %d\n", mmc_hostname(mq->card->host), __func__, err);
+
+	msleep(1000);
+	err = mmc_runtime_resume_test(mq->card->host);
+	if (err < 0)
+		pr_err("%s: %s: resume host failed: %d\n", mmc_hostname(mq->card->host), __func__, err);
+
+	msleep(1000);
+
+	return 0;
+}
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 
 static struct request *mmc_peek_request(struct mmc_queue *mq)
 {
@@ -133,6 +192,12 @@ static int mmc_cmdq_thread(void *d)
 		 * Also we end the request if there is a partition switch error,
 		 * so we should not requeue the request here.
 		 */
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+		if (mq->card->host->suspendtest)
+			mmc_run_set_suspendtest(mq);
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 	} /* loop */
 
 	return 0;
@@ -192,6 +257,12 @@ static int mmc_queue_thread(void *d)
 				set_current_state(TASK_RUNNING);
 				break;
 			}
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+			if (mq->card->host->suspendtest)
+				mmc_run_set_suspendtest(mq);
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 			up(&mq->thread_sem);
 			schedule();
 			down(&mq->thread_sem);

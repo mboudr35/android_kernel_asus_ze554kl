@@ -135,6 +135,20 @@ static const char *sd_cache_types[] = {
 	"write back, no read (daft)"
 };
 
+#ifdef BLOCK_WRITE_CACHE
+static void sd_set_flush_flag(struct scsi_disk *sdkp)
+{
+	bool wc = false, fua = false;
+
+	if (sdkp->WCE) {
+		wc = true;
+		if (sdkp->DPOFUA)
+			fua = true;
+	}
+
+	blk_queue_write_cache(sdkp->disk->queue, wc, fua);
+}
+#else
 static void sd_set_flush_flag(struct scsi_disk *sdkp)
 {
 	unsigned flush = 0;
@@ -147,6 +161,7 @@ static void sd_set_flush_flag(struct scsi_disk *sdkp)
 
 	blk_queue_flush(sdkp->disk->queue, flush);
 }
+#endif
 
 static ssize_t
 cache_type_store(struct device *dev, struct device_attribute *attr,
@@ -2798,6 +2813,12 @@ static int sd_revalidate_disk(struct gendisk *disk)
 		sd_read_cache_type(sdkp, buffer);
 		sd_read_app_tag_own(sdkp, buffer);
 		sd_read_write_same(sdkp, buffer);
+		/*
+		  *  Some card readers or usb storages can't be attached because it's too fast to dea with flush
+		  *  request after get cache related information.
+		  *  Add delay time to increase compatibility.
+		  */
+		msleep(100);
 	}
 
 	sdkp->first_scan = 0;

@@ -136,6 +136,94 @@ static inline u64 msm_rpmstats_read_quad_register_v2(void __iomem *regbase,
 	return dst;
 }
 
+//ASUS_BSP +++
+static struct msm_rpmstats_platform_data *g_pdata;
+static struct msm_rpmstats_private_data *g_prvdata;
+
+static inline void asus_rpm_info(
+			struct msm_rpmstats_private_data *prvdata)
+{
+	void __iomem *reg;
+	struct msm_rpm_stats_data_v2 data;
+	int i, length;
+	char rpmInfo[256] = "";
+	char stat_type[5];
+
+	reg = prvdata->reg_base;
+	for (i = 0, length = 0; i < prvdata->num_records; i++) {
+		data.stat_type = msm_rpmstats_read_long_register_v2(reg, i,
+				offsetof(struct msm_rpm_stats_data_v2,
+					stat_type));
+		stat_type[4] = 0;
+		memcpy(stat_type, &data.stat_type, sizeof(u32));
+		data.count = msm_rpmstats_read_long_register_v2(reg, i,
+				offsetof(struct msm_rpm_stats_data_v2, count));
+		if (i > 0) {
+			snprintf(rpmInfo, sizeof(rpmInfo), "%s, ", rpmInfo);
+		}
+		snprintf(rpmInfo, sizeof(rpmInfo), "%s%s count = %u", rpmInfo, stat_type, data.count);
+	}
+	printk("[RPM]%s: %s\n", __func__, rpmInfo);
+}
+void asus_get_rpm_info(void)
+{
+	struct msm_rpmstats_private_data *prvdata;
+
+	prvdata = g_prvdata;
+	if (prvdata) {
+		if (prvdata->platform_data->version == 2) {
+			asus_rpm_info(prvdata);
+		} else{
+			printk("[RPM][ERR]%s: version error: %u\n", __func__, prvdata->platform_data->version);
+		}
+	} else{
+		printk("[RPM][ERR]%s: initial failed!\n", __func__);
+	}
+}
+static void asus_rpmstats_init(void)
+{
+	struct msm_rpmstats_private_data *prvdata;
+	struct msm_rpmstats_platform_data *pdata;
+
+	pdata = g_pdata;
+
+	g_prvdata =	kmalloc(sizeof(struct msm_rpmstats_private_data), GFP_KERNEL);
+
+	if (!g_prvdata) {
+		return;
+	}
+	prvdata = g_prvdata;
+
+	prvdata->reg_base = ioremap_nocache(pdata->phys_addr_base,
+					pdata->phys_size);
+	if (!prvdata->reg_base) {
+		kfree(g_prvdata);
+		prvdata = NULL;
+		printk("[RPM][ERR]%s: ERROR could not ioremap start=%pa, len=%u\n",
+			__func__, &pdata->phys_addr_base,
+			pdata->phys_size);
+		return;
+	}
+
+	prvdata->read_idx = prvdata->num_records =  prvdata->len = 0;
+	prvdata->platform_data = pdata;
+	if (pdata->version == 2) {
+		prvdata->num_records = 2;
+	}
+}
+
+static void asus_rpmstats_deinit(void)
+{
+	struct msm_rpmstats_private_data *private = g_prvdata;
+	if (g_prvdata) {
+		if (private->reg_base) {
+			iounmap(private->reg_base);
+		}
+		kfree(g_prvdata);
+	}
+}
+//ASUS_BSP ---
+
 static inline int msm_rpmstats_copy_stats_v2(
 			struct msm_rpmstats_private_data *prvdata)
 {
@@ -515,6 +603,10 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 	pdata->phys_addr_base  = res->start + offset_addr;
 
 	pdata->phys_size = resource_size(res);
+//ASUS_BSP +++
+	g_pdata = pdata;
+//ASUS_BSP ---
+	
 	node = pdev->dev.of_node;
 	if (pdev->dev.platform_data) {
 		pd = pdev->dev.platform_data;
@@ -528,6 +620,9 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 
 		dent = debugfs_create_file("rpm_stats", S_IRUGO, NULL,
 				pdata, &msm_rpmstats_fops);
+//ASUS_BSP +++
+		asus_rpmstats_init();
+//ASUS_BSP ---
 
 		if (!dent) {
 			pr_err("%s: ERROR rpm_stats debugfs_create_file	fail\n",
@@ -566,6 +661,9 @@ static int msm_rpmstats_remove(struct platform_device *pdev)
 {
 	struct dentry *dent;
 
+//ASUS_BSP +++
+	asus_rpmstats_deinit();
+//ASUS_BSP ---
 	dent = platform_get_drvdata(pdev);
 	debugfs_remove(dent);
 	debugfs_remove(heap_dent);

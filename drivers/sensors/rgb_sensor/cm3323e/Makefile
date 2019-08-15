@@ -1,0 +1,1 @@
+obj-$(CONFIG_INPUT_CM3323E)	+= cm3323e.o

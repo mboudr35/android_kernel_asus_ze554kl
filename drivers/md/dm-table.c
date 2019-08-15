@@ -1325,13 +1325,25 @@ static void dm_table_verify_integrity(struct dm_table *t)
 static int device_flush_capable(struct dm_target *ti, struct dm_dev *dev,
 				sector_t start, sector_t len, void *data)
 {
+#ifdef BLOCK_WRITE_CACHE
+	unsigned long flush = (unsigned long) data;
+#else
 	unsigned flush = (*(unsigned *)data);
+#endif
 	struct request_queue *q = bdev_get_queue(dev->bdev);
 
+#ifdef BLOCK_WRITE_CACHE
+	return q && (q->queue_flags & flush);
+#else
 	return q && (q->flush_flags & flush);
+#endif
 }
 
+#ifdef BLOCK_WRITE_CACHE
+static bool dm_table_supports_flush(struct dm_table *t, unsigned long flush)
+#else
 static bool dm_table_supports_flush(struct dm_table *t, unsigned flush)
+#endif
 {
 	struct dm_target *ti;
 	unsigned i = 0;
@@ -1352,7 +1364,11 @@ static bool dm_table_supports_flush(struct dm_table *t, unsigned flush)
 			return true;
 
 		if (ti->type->iterate_devices &&
+#ifdef BLOCK_WRITE_CACHE
+		    ti->type->iterate_devices(ti, device_flush_capable, (void *) flush))
+#else
 		    ti->type->iterate_devices(ti, device_flush_capable, &flush))
+#endif
 			return true;
 	}
 
@@ -1483,7 +1499,11 @@ static bool dm_table_supports_discards(struct dm_table *t)
 void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 			       struct queue_limits *limits)
 {
+#ifdef BLOCK_WRITE_CACHE
+	bool wc = false, fua = false;
+#else
 	unsigned flush = 0;
+#endif
 
 	/*
 	 * Copy table's limits to the DM device's request_queue
@@ -1495,12 +1515,26 @@ void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 	else
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
 
+#ifdef BLOCK_WRITE_CACHE
+	if (dm_table_supports_flush(t, (1UL << QUEUE_FLAG_WC))) {
+		wc = true;
+#else
 	if (dm_table_supports_flush(t, REQ_FLUSH)) {
 		flush |= REQ_FLUSH;
+#endif
+	#ifdef BLOCK_WRITE_CACHE
+		if (dm_table_supports_flush(t, (1UL << QUEUE_FLAG_FUA)))
+			fua = true;
+	#else
 		if (dm_table_supports_flush(t, REQ_FUA))
 			flush |= REQ_FUA;
+	#endif
 	}
+#ifdef BLOCK_WRITE_CACHE
+	blk_queue_write_cache(q, wc, fua);
+#else
 	blk_queue_flush(q, flush);
+#endif
 
 	if (!dm_table_discard_zeroes_data(t))
 		q->limits.discard_zeroes_data = 0;
@@ -1660,7 +1694,7 @@ int dm_table_any_congested(struct dm_table *t, int bdi_bits)
 		char b[BDEVNAME_SIZE];
 
 		if (likely(q))
-			r |= bdi_congested(&q->backing_dev_info, bdi_bits);
+			r |= bdi_congested(q->backing_dev_info, bdi_bits);
 		else
 			DMWARN_LIMIT("%s: any_congested: nonexistent device %s",
 				     dm_device_name(t->md),

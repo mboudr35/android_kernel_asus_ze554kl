@@ -138,7 +138,16 @@ void notify_proxy_vote(struct device *device);
 void notify_proxy_unvote(struct device *device);
 void complete_err_ready(struct subsys_device *subsys);
 extern int wait_for_shutdown_ack(struct subsys_desc *desc);
+
+extern void subsys_save_reason(char *name, char *reason);/*ASUS-BBSP Save SSR reason+*/
+
 #else
+/*ASUS-BBSP Save SSR reason+++*/
+static inline void subsys_save_reason(char *name, char *reason)
+{
+	return;
+}
+/*ASUS-BBSP Save SSR reason---*/
 
 static inline int subsys_get_restart_level(struct subsys_device *dev)
 {

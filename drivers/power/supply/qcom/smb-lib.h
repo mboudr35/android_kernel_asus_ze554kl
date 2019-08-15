@@ -71,6 +71,11 @@ enum print_reason {
 #define BOOST_BACK_STORM_COUNT	3
 #define WEAK_CHG_STORM_COUNT	8
 
+//WeiYu +++
+#define COUNTRY_BR	1
+#define COUNTRY_OTHER	2
+//WeiYu ---
+
 enum smb_mode {
 	PARALLEL_MASTER = 0,
 	PARALLEL_SLAVE,
@@ -195,6 +200,7 @@ struct smb_params {
 	struct smb_chg_param	dc_icl_div2_mid_hv;
 	struct smb_chg_param	dc_icl_div2_hv;
 	struct smb_chg_param	jeita_cc_comp;
+	struct smb_chg_param	step_cc_delta[5];
 	struct smb_chg_param	freq_buck;
 	struct smb_chg_param	freq_boost;
 };
@@ -297,8 +303,19 @@ struct smb_charger {
 	struct delayed_work	pl_enable_work;
 	struct work_struct	legacy_detection_work;
 	struct delayed_work	uusb_otg_work;
-	struct delayed_work	bb_removal_work;
+	struct delayed_work	bb_removal_work;	// WY add 
 
+	/* asus work */
+	struct delayed_work	asus_chg_flow_work;
+	struct delayed_work	asus_adapter_adc_work;
+	struct delayed_work	asus_min_monitor_work;
+	struct delayed_work asus_usb_alert_work;
+	struct delayed_work asus_low_impedance_work;
+	struct delayed_work asus_water_proof_work;
+	struct delayed_work asus_batt_RTC_work;
+	struct delayed_work asus_set_flow_flag_work;
+	struct delayed_work asus_rerun_DRP_work;
+	struct delayed_work read_countrycode_work;
 	/* cached status */
 	int			voltage_min_uv;
 	int			voltage_max_uv;
@@ -354,6 +371,17 @@ struct smb_charger {
 	int			usb_icl_delta_ua;
 	int			pulse_cnt;
 };
+
+//ASUS BSP : Add gpio control struct +++
+struct gpio_control {
+	u32 ADC_SW_EN;
+	u32 ADCPWREN_PMI_GP1;
+	u32 USB_THERMAL_ALERT;
+	u32 USB_LOW_IMPEDANCE;
+	u32	USB_LID_EN;
+	u32 USB_WATER_PROOF;
+};
+//ASUS BSP : Add gpio control struct ---
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
 int smblib_masked_write(struct smb_charger *chg, u16 addr, u8 mask, u8 val);

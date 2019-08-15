@@ -17,6 +17,7 @@
 #include "camera.h"
 #include "msm_cci.h"
 #include "msm_camera_dt_util.h"
+#include "../fac_camera.h"//ASUS_BSP ZZ++
 
 /* Logging macro */
 #undef CDBG
@@ -29,6 +30,13 @@ static int32_t msm_sensor_driver_platform_probe(struct platform_device *pdev);
 
 /* Static declaration */
 static struct msm_sensor_ctrl_t *g_sctrl[MAX_CAMERAS];
+
+//ASUS_BSP PJ_Ma+++
+struct msm_sensor_ctrl_t ** get_msm_sensor_ctrls(void)
+{
+       return g_sctrl;
+}
+//ASUS_BSP PJ_Ma---
 
 static int msm_sensor_platform_remove(struct platform_device *pdev)
 {
@@ -48,6 +56,13 @@ static int msm_sensor_platform_remove(struct platform_device *pdev)
 	kfree(s_ctrl);
 	g_sctrl[pdev->id] = NULL;
 
+//ASUS_BSP ZZ++ add camera proc (msm8953)++
+         remove_proc_file();	
+	remove_file();     
+	remove_module_file(); 
+	remove_resolution_file();
+	remove_thermal_file();
+//[ASUS_BSP ZZ++ add camera proc (msm8953)--
 	return 0;
 }
 
@@ -759,7 +774,7 @@ int32_t msm_sensor_driver_probe(void *setting,
 		pr_err("failed: slave_info %pK", setting);
 		return -EINVAL;
 	}
-
+	pr_err("camera module probe +++++");
 	/* Allocate memory for slave info */
 	slave_info = kzalloc(sizeof(*slave_info), GFP_KERNEL);
 	if (!slave_info)
@@ -1046,6 +1061,7 @@ CSID_TG:
 	}
 
 	pr_err("%s probe succeeded", slave_info->sensor_name);
+	pr_err("camera module %s probe -----", slave_info->sensor_name);
 
 	s_ctrl->bypass_video_node_creation =
 		slave_info->bypass_video_node_creation;
@@ -1063,6 +1079,11 @@ CSID_TG:
 		pr_err("failed: camera creat v4l2 rc %d", rc);
 		goto camera_power_down;
 	}
+
+	//ASUS_BSP ZZ++ Sheldon_Li add camera proc (msm8953)++
+	set_sensor_info(slave_info->camera_id,s_ctrl,slave_info->sensor_id_info.sensor_id); //save camera information
+	create_proc_otp_thermal_file(slave_info); //create otp and thermal proc file
+	create_proc_pdaf_info();
 
 	/* Power down */
 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
@@ -1094,11 +1115,24 @@ CSID_TG:
 
 	msm_sensor_fill_sensor_info(s_ctrl, probed_info, entity_name);
 
+	//show message
+	if(CAMERA_0 == slave_info->camera_id || CAMERA_2 == slave_info->camera_id){
+		create_rear_module_proc_file(slave_info->camera_id);
+		create_rear_status_proc_file(slave_info->camera_id);
+		create_rear_resolution_proc_file(slave_info->camera_id);
+	}else if(CAMERA_1 == slave_info->camera_id){
+		create_front_module_proc_file();
+		create_front_status_proc_file();
+		create_front_resolution_proc_file();
+	}
+	//ASUS_BSP ZZ++ Sheldon_Li add camera proc (msm8953)--
+
 	/*
 	 * Set probe succeeded flag to 1 so that no other camera shall
 	 * probed on this slot
 	 */
 	s_ctrl->is_probe_succeed = 1;
+
 	return rc;
 
 camera_power_down:

@@ -1564,6 +1564,11 @@ config PRINTK
 	  very difficult to diagnose system problems, saying N here is
 	  strongly discouraged.
 
+config BOOTDBGUART
+	depends on PRINTK
+	default y
+	bool "Enable uart debug according to command"
+
 config BUG
 	bool "BUG() support" if EXPERT
 	default y

@@ -269,6 +269,7 @@
 		pm660_l13: regulator-l13 {
 			regulator-min-microvolt = <1780000>;
 			regulator-max-microvolt = <1950000>;
+			regulator-always-on;	/* ASUS BSP Always Enable 1.8V for BLSP ( NFC, ChargerIC, Power, Audio ) I2C */
 			status = "okay";
 		};
 	};
@@ -278,6 +279,7 @@
 		pm660_l14: regulator-l14 {
 			regulator-min-microvolt = <1710000>;
 			regulator-max-microvolt = <1900000>;
+			regulator-always-on;	/* ASUS BSP Always Enable 1.8V for I2C & Sensors */
 			status = "okay";
 		};
 	};
@@ -294,6 +296,15 @@
 	rpm-regulator-ldoa17 {
 		status = "okay";
 		pm660_l17: regulator-l17 {
+			regulator-min-microvolt = <1650000>;
+			regulator-max-microvolt = <2950000>;
+			status = "okay";
+		};
+	};
+
+	rpm-regulator-ldoa18 {
+		status = "okay";
+		pm660_l18: regulator-l18 {
 			regulator-min-microvolt = <1650000>;
 			regulator-max-microvolt = <2950000>;
 			status = "okay";
@@ -342,8 +353,9 @@
 	rpm-regulator-ldob3 {
 		status = "okay";
 		pm660l_l3: regulator-l3 {
-			regulator-min-microvolt = <1710000>;
+			regulator-min-microvolt = <3000000>;
 			regulator-max-microvolt = <3600000>;
+			regulator-always-on;	/* ASUS BSP Always Enable 3V for ALS/PS Sensors */
 			status = "okay";
 		};
 	};
@@ -369,8 +381,8 @@
 	rpm-regulator-ldob6 {
 		status = "okay";
 		pm660l_l6: regulator-l6 {
-			regulator-min-microvolt = <1700000>;
-			regulator-max-microvolt = <3300000>;
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <3200000>;
 			status = "okay";
 		};
 	};
@@ -388,8 +400,8 @@
 	rpm-regulator-ldob8 {
 		status = "okay";
 		pm660l_l8: regulator-l8 {
-			regulator-min-microvolt = <3200000>;
-			regulator-max-microvolt = <3400000>;
+			regulator-min-microvolt = <1650000>;
+			regulator-max-microvolt = <2950000>;
 			status = "okay";
 		};
 	};

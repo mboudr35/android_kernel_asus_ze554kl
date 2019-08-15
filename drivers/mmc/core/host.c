@@ -833,10 +833,94 @@ static DEVICE_ATTR(perf, S_IRUGO | S_IWUSR,
 
 #endif
 
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+static ssize_t
+show_suspendcnt(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mmc_host *host = cls_dev_to_mmc_host(dev);
+	BUG_ON(!host);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", host->suspendcnt);
+}
+
+static DEVICE_ATTR(suspendcnt, S_IRUGO | S_IWUSR, show_suspendcnt, NULL);
+
+static ssize_t
+show_suspendtest(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mmc_host *host = cls_dev_to_mmc_host(dev);
+	BUG_ON(!host);
+
+	if (host->suspendtest)
+		return snprintf(buf, PAGE_SIZE, "suspendtest enabled\n");
+        else
+		return snprintf(buf, PAGE_SIZE, "suspendtest disabled\n");
+}
+
+static ssize_t
+set_suspendtest(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int64_t value;
+        struct mmc_host *host = cls_dev_to_mmc_host(dev);
+
+        BUG_ON(!host);
+
+        sscanf(buf, "%lld", &value);
+        spin_lock(&host->lock);
+        if (!value) {
+		host->suspendtest = false;
+        } else {
+		host->suspendtest = true;
+	}
+	spin_unlock(&host->lock);
+
+	return count;
+}
+
+static DEVICE_ATTR(suspendtest, S_IRUGO | S_IWUSR, show_suspendtest, set_suspendtest);
+
+static ssize_t
+show_suspend_datasz(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mmc_host *host = cls_dev_to_mmc_host(dev);
+	BUG_ON(!host);
+
+	return snprintf(buf, PAGE_SIZE, "suspend data size:%d\n", host->suspend_datasz);
+}
+
+static ssize_t
+set_suspend_datasz(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int64_t value;
+	struct mmc_host *host = cls_dev_to_mmc_host(dev);
+
+	BUG_ON(!host);
+
+	sscanf(buf, "%lld", &value);
+	spin_lock(&host->lock);
+	host->suspend_datasz = (unsigned int )value;
+	spin_unlock(&host->lock);
+	pr_info("%s: suspend data size: %d\n", mmc_hostname(host), host->suspend_datasz);
+
+	return count;
+}
+
+static DEVICE_ATTR(suspend_datasz, S_IRUGO | S_IWUSR, show_suspend_datasz, set_suspend_datasz);
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
+
 static struct attribute *dev_attrs[] = {
 #ifdef CONFIG_MMC_PERF_PROFILING
 	&dev_attr_perf.attr,
 #endif
+//ASUS_BSP Deeo : mmc suspend stress test +++
+#ifdef CONFIG_MMC_SUSPEND_TEST
+    &dev_attr_suspendtest.attr,
+    &dev_attr_suspendcnt.attr,
+    &dev_attr_suspend_datasz.attr,
+#endif
+//ASUS_BSP Deeo : mmc suspend stress test ---
 	NULL,
 };
 static struct attribute_group dev_attr_grp = {

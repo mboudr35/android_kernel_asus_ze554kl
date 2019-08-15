@@ -151,8 +151,8 @@
 		#size-cells = <1>;
 		ranges;
 
-		interrupts = <0 347 0>, <0 243 0>, <0 180 0>;
-		interrupt-names = "hs_phy_irq", "ss_phy_irq", "pwr_event_irq";
+		interrupts = <0 347 0>, <0 180 0>;
+		interrupt-names = "hs_phy_irq", "pwr_event_irq";
 
 		USB3_GDSC-supply = <&gdsc_usb30>;
 
@@ -200,6 +200,7 @@
 			snps,has-lpm-erratum;
 			snps,is-utmi-l1-suspend;
 			snps,hird-threshold = /bits/ 8 <0x0>;
+			maximum-speed = "high-speed";
 		};
 
 		qcom,usbbam@a904000 {
@@ -269,22 +270,28 @@
 		compatible = "qcom,qusb2phy";
 		reg = <0x0c012000 0x180>,
 			<0x01fcb24c 0x4>,
-			<0x00780240 0x4>,
 			<0x00188018 0x4>;
 		reg-names = "qusb_phy_base",
 			"tcsr_clamp_dig_n_1p8",
-			"tune2_efuse_addr",
 			"ref_clk_addr";
 		vdd-supply = <&pm660l_l1>;
 		vdda18-supply = <&pm660_l10>;
 		vdda33-supply = <&pm660l_l7>;
 		qcom,vdd-voltage-level = <0 925000 925000>;
-		qcom,tune2-efuse-bit-pos = <25>;
-		qcom,tune2-efuse-num-bits = <4>;
-		qcom,qusb-phy-init-seq = <0xf8 0x80
-					0xb3 0x84
+		qcom,qusb-phy-init-device-seq = <0xf8 0x80
+					0x3f 0x84
 					0x83 0x88
-					0xc0 0x8c
+					0xc7 0x8c
+					0x30 0x08
+					0x79 0x0c
+					0x21 0x10
+					0x14 0x9c
+					0x9f 0x1c
+					0x00 0x18>;
+		qcom,qusb-phy-init-host-seq = <0xf8 0x80
+					0x2f 0x84
+					0x83 0x88
+					0xc7 0x8c
 					0x30 0x08
 					0x79 0x0c
 					0x21 0x10

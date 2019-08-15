@@ -248,6 +248,7 @@ struct msm_flash_init_info_t32 {
 
 struct msm_flash_cfg_data_t32 {
 	enum msm_flash_cfg_type_t cfg_type;
+        enum msm_flash_ctrl_state_t ctrl_state;//ASUS_BSP PJ "add ctrl state for mapping to truth table"
 	int32_t flash_current[MAX_LED_TRIGGERS];
 	int32_t flash_duration[MAX_LED_TRIGGERS];
 	union {

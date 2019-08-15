@@ -453,6 +453,7 @@ static unsigned int sl_busy_to_laf(struct cpufreq_interactive_policyinfo *ppol,
 
 #define NEW_TASK_RATIO 75
 #define PRED_TOLERANCE_PCT 10
+#define ASUS_CAM_LOAD 90
 static void cpufreq_interactive_timer(unsigned long data)
 {
 	s64 now;
@@ -480,6 +481,10 @@ static void cpufreq_interactive_timer(unsigned long data)
 	bool jump_to_max_no_ts = false;
 	bool jump_to_max = false;
 	bool start_hyst = true;
+	//BSP Clay +++ for camera, choose average load
+	int load_count=0;// average load count
+	bool enable_flag=false; // when camera target_load = ASUS_CAM_LOAD
+	//BSP Clay --- for camera, choose average load
 
 	if (!down_read_trylock(&ppol->enable_sem))
 		return;
@@ -497,6 +502,10 @@ static void cpufreq_interactive_timer(unsigned long data)
 	ppol->notif_pending = false;
 	now = ktime_to_us(ktime_get());
 	ppol->last_evaluated_jiffy = get_jiffies_64();
+
+	if( *(tunables->target_loads) == ASUS_CAM_LOAD){
+		enable_flag = true;
+	}
 
 	if (tunables->use_sched_load)
 		sched_get_cpus_busy(sl, ppol->policy->cpus);
@@ -541,6 +550,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 		trace_cpufreq_interactive_cpuload(cpu, cpu_load, new_load_pct,
 						  prev_l, pred_l);
 
+		//BSP Clay +++ for camera, choose average load
+		if(enable_flag){
+			load_count = prev_l + load_count;
+		}
+		//BSP Clay --- for camera, choose average load
+
 		/* save loadadjfreq for notification */
 		pcpu->loadadjfreq = max(t_prevlaf, t_predlaf);
 
@@ -553,7 +568,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 		i++;
 	}
 	spin_unlock(&ppol->load_lock);
-
+	//BSP Clay +++ for camera, choose average load
+	if(enable_flag){
+		pol_load = load_count / 4;
+		prev_laf = pol_load * ppol->target_freq;
+	}
+	//BSP Clay --- for camera, choose average load
 	tunables->boosted = tunables->boost_val || now < tunables->boostpulse_endtime;
 
 	prev_chfreq = choose_freq(ppol, prev_laf);

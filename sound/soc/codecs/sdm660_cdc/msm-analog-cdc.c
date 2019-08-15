@@ -34,6 +34,21 @@
 #include "../../msm/sdm660-common.h"
 #include "../wcd-mbhc-v2.h"
 
+/* ASUS_BSP Paul +++ */
+#include <linux/gpio.h>
+#include <linux/proc_fs.h>
+struct sdm660_cdc_priv *g_sdm660_cdc_priv;
+int g_DebugMode = 1;
+#ifndef ASUS_USER_BUILD
+#ifdef CONFIG_BOOTDBGUART
+extern bool g_bootdbguart_y;
+#endif
+#endif
+#define AUDIO_DEBUG_GPIO 25
+#include <linux/switch.h>
+struct switch_dev *g_audiowizard_force_preset_sdev = NULL;
+/* ASUS_BSP Paul --- */
+
 #define DRV_NAME "pmic_analog_codec"
 #define SDM660_CDC_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |\
@@ -198,6 +213,8 @@ static void msm_anlg_cdc_set_auto_zeroing(struct snd_soc_codec *codec,
 static void msm_anlg_cdc_configure_cap(struct snd_soc_codec *codec,
 				       bool micbias1, bool micbias2);
 static bool msm_anlg_cdc_use_mb(struct snd_soc_codec *codec);
+
+struct snd_soc_codec *registered_codec; /* ASUS_BSP Paul +++ */
 
 static int get_codec_version(struct sdm660_cdc_priv *sdm660_cdc)
 {
@@ -552,6 +569,8 @@ static void msm_anlg_cdc_mbhc_common_micb_ctrl(struct snd_soc_codec *codec,
 	snd_soc_update_bits(codec, reg, mask, val);
 }
 
+//Bruno++
+#if 0
 static void msm_anlg_cdc_mbhc_internal_micbias_ctrl(struct snd_soc_codec *codec,
 						    int micbias_num,
 						    bool enable)
@@ -567,6 +586,8 @@ static void msm_anlg_cdc_mbhc_internal_micbias_ctrl(struct snd_soc_codec *codec,
 				0x10, 0x00);
 	}
 }
+#endif
+//Bruno++
 
 static bool msm_anlg_cdc_mbhc_hph_pa_on_status(struct snd_soc_codec *codec)
 {
@@ -924,7 +945,7 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.micbias_enable_status = msm_anlg_cdc_micb_en_status,
 	.mbhc_bias = msm_anlg_cdc_enable_master_bias,
 	.mbhc_common_micb_ctrl = msm_anlg_cdc_mbhc_common_micb_ctrl,
-	.micb_internal = msm_anlg_cdc_mbhc_internal_micbias_ctrl,
+	.micb_internal = NULL,		//Bruno++ Since our headset has re for pull high, we don't need internel RBIAS. (msm_anlg_cdc_mbhc_internal_micbias_ctrl)
 	.hph_pa_on_status = msm_anlg_cdc_mbhc_hph_pa_on_status,
 	.set_btn_thr = msm_anlg_cdc_mbhc_program_btn_thr,
 	.extn_use_mb = msm_anlg_cdc_use_mb,
@@ -2551,12 +2572,6 @@ static int msm_anlg_cdc_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 				snd_soc_update_bits(codec,
 					MSM89XX_PMIC_ANALOG_TX_1_2_ATEST_CTL_2,
 					0x02, 0x02);
-			snd_soc_update_bits(codec, micb_int_reg, 0x80, 0x80);
-		} else if (strnstr(w->name, internal2_text, strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x10, 0x10);
-			snd_soc_update_bits(codec, w->reg, 0x60, 0x00);
-		} else if (strnstr(w->name, internal3_text, strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x2, 0x2);
 		/*
 		 * update MSM89XX_PMIC_ANALOG_TX_1_2_ATEST_CTL_2
 		 * for external bias only, not for external2.
@@ -2582,10 +2597,7 @@ static int msm_anlg_cdc_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 			 * for version < tombak 2.0.
 			 */
 			usleep_range(20000, 20100);
-		if (strnstr(w->name, internal1_text, strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x40, 0x40);
-		} else if (strnstr(w->name, internal2_text,  strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x08, 0x08);
+		if (strnstr(w->name, internal2_text,  strlen(w->name))) {
 			msm_anlg_cdc_notifier_call(codec,
 					WCD_EVENT_POST_MICBIAS_2_ON);
 		} else if (strnstr(w->name, internal3_text, 30)) {
@@ -2596,13 +2608,9 @@ static int msm_anlg_cdc_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 		}
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		if (strnstr(w->name, internal1_text, strlen(w->name))) {
-			snd_soc_update_bits(codec, micb_int_reg, 0xC0, 0x40);
-		} else if (strnstr(w->name, internal2_text, strlen(w->name))) {
+		if (strnstr(w->name, internal2_text, strlen(w->name))) {
 			msm_anlg_cdc_notifier_call(codec,
 					WCD_EVENT_POST_MICBIAS_2_OFF);
-		} else if (strnstr(w->name, internal3_text, 30)) {
-			snd_soc_update_bits(codec, micb_int_reg, 0x2, 0x0);
 		} else if (strnstr(w->name, external2_text, strlen(w->name))) {
 			/*
 			 * send micbias turn off event to mbhc driver and then
@@ -4112,6 +4120,209 @@ int msm_anlg_codec_info_create_codec_entry(struct snd_info_entry *codec_root,
 }
 EXPORT_SYMBOL(msm_anlg_codec_info_create_codec_entry);
 
+/* ASUS_BSP Paul +++ */
+#ifdef CONFIG_PROC_FS
+#define AUDIO_DEBUG_PROC_FILE "driver/audio_debug"
+#define CODEC_STATUS_PROC_FILE "driver/codec_status"
+
+static struct proc_dir_entry *audio_debug_proc_file;
+static struct proc_dir_entry *codec_status_proc_file;
+static mm_segment_t oldfs;
+
+static void initKernelEnv(void)
+{
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+}
+
+static void deinitKernelEnv(void)
+{
+	set_fs(oldfs);
+}
+
+static ssize_t audio_debug_proc_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
+{
+	char messages[256];
+	memset(messages, 0, sizeof(messages));
+	printk("[Audio][Debug] audio_debug_proc_write\n");
+
+	if (len > 256)
+		len = 256;
+	if (copy_from_user(messages, buff, len))
+		return -EFAULT;
+
+	initKernelEnv();
+
+	if (strncmp(messages, "1", 1) == 0) {
+		if (!g_DebugMode) {
+			gpio_direction_output(AUDIO_DEBUG_GPIO, 0); /* enable uart log, disable audio */
+			wcd_mbhc_plug_detect_for_debug_mode(&g_sdm660_cdc_priv->mbhc, 1);
+			g_DebugMode = 1;
+		}
+		printk("[Audio][Debug] Audio debug mode!!\n");
+	} else if (strncmp(messages, "0", 1) == 0) {
+#ifndef ASUS_USER_BUILD
+#ifdef CONFIG_BOOTDBGUART
+		if (g_bootdbguart_y) {
+			gpio_direction_output(AUDIO_DEBUG_GPIO, 0); /* enable uart log, disable audio */
+			wcd_mbhc_plug_detect_for_debug_mode(&g_sdm660_cdc_priv->mbhc, 1);
+			g_DebugMode = 1;
+			printk("[Audio][Debug] Audio debug mode!!\n");
+		} else
+#endif
+#endif
+		if (g_DebugMode) {
+			gpio_direction_output(AUDIO_DEBUG_GPIO, 1); /* disable uart log, enable audio */
+			g_DebugMode = 0;
+			wcd_mbhc_plug_detect_for_debug_mode(&g_sdm660_cdc_priv->mbhc, 0);
+			printk("[Audio][Debug] Audio headset normal mode!!\n");
+		}
+	} else if (strncmp(messages, "read", strlen("read")) == 0) {
+		unsigned int reg, value;
+		sscanf(messages + 5, "%x", &reg);
+		value = snd_soc_read(registered_codec, reg);
+		printk("[Audio][codec] read register reg[0x%x]=[0x%x]\n", reg, value);
+	} else if (strncmp(messages, "write", strlen("write")) == 0) {
+		unsigned int reg, value;
+		sscanf(messages + 6, "%x %x", &reg, &value);
+		snd_soc_write(registered_codec, reg, value);
+		value = snd_soc_read(registered_codec, reg);
+		printk("[Audio][codec] write register reg[0x%x]=[0x%x]\n", reg, value);
+	} else if (strncmp(messages, "update", strlen("update")) == 0) {
+		unsigned int reg, mask, value;
+		sscanf(messages + 7, "%x %x %x", &reg, &mask, &value);
+		snd_soc_update_bits(registered_codec, reg, mask, value);
+		value = snd_soc_read(registered_codec, reg);
+		printk("[Audio][codec] update register reg[0x%x]=[0x%x]\n", reg, value);
+	} /*else if (strncmp(messages, "dump", strlen("dump")) == 0) {
+		unsigned int val;
+		int i;
+		for (i = 0; i < MSM8X16_WCD_CACHE_SIZE; i++) {
+			if (!snd_soc_codec_readable_register(registered_codec, i))
+				continue;
+			val = snd_soc_read(registered_codec, i);
+			printk("[Audio][codec] dump register reg[0x%x]=[0x%x]\n", i, val);
+		}
+	} */else {
+		printk("[Audio][Debug] %s\n", messages);
+	}
+
+	deinitKernelEnv();
+	return len;
+}
+
+static ssize_t audio_debug_proc_read(struct file *filp, char __user *buff, size_t len, loff_t *off)
+{
+	char messages[256];
+
+	if (*off)
+		return 0;
+
+	memset(messages, 0, sizeof(messages));
+	if (len > 256)
+		len = 256;
+
+	if (g_DebugMode)
+		sprintf(messages, "Audio debug mode\n");
+	else {
+		switch (g_sdm660_cdc_priv->mbhc.current_plug) {
+		case MBHC_PLUG_TYPE_HEADSET:
+			sprintf(messages, "1\n");
+			break;
+		case MBHC_PLUG_TYPE_HEADPHONE:
+			sprintf(messages, "2\n");
+			break;
+		case MBHC_PLUG_TYPE_HIGH_HPH:
+			sprintf(messages, "3\n");
+			break;
+		case MBHC_PLUG_TYPE_GND_MIC_SWAP:
+			sprintf(messages, "4\n");
+			break;
+		case MBHC_PLUG_TYPE_ANC_HEADPHONE:
+			sprintf(messages, "5\n");
+			break;
+		default:
+			sprintf(messages, "0\n");
+			break;
+		}
+	}
+
+	if (copy_to_user(buff, messages, len))
+		return -EFAULT;
+
+	(*off)++;
+	return len;
+}
+
+static ssize_t codec_status_proc_read(struct file *filp, char __user *buff, size_t len, loff_t *off)
+{
+	char messages[256];
+	int val;
+
+	if (*off)
+		return 0;
+
+	memset(messages, 0, sizeof(messages));
+	if (len > 256)
+		len = 256;
+
+	val = snd_soc_read(registered_codec, MSM89XX_PMIC_DIGITAL_REVISION1);
+
+	if (val < 0)
+		sprintf(messages, "0\n");
+	else
+		sprintf(messages, "1\n");
+
+	if (copy_to_user(buff, messages, len))
+		return -EFAULT;
+
+	(*off)++;
+	return len;
+}
+
+static struct file_operations audio_debug_proc_ops = {
+	.read = audio_debug_proc_read,
+	.write = audio_debug_proc_write,
+};
+
+static struct file_operations codec_status_proc_ops = {
+	.read = codec_status_proc_read,
+};
+
+static void create_audio_debug_proc_file(void)
+{
+	printk("[Audio][Debug] create_audio_debug_proc_file\n");
+	audio_debug_proc_file = proc_create(AUDIO_DEBUG_PROC_FILE, 0666, NULL, &audio_debug_proc_ops);
+
+	if (audio_debug_proc_file == NULL)
+		printk("[Audio][Debug] create_audio_debug_proc_file failed\n");
+}
+
+static void create_codec_status_proc_file(void)
+{
+	printk("[Audio][Debug] create_codec_status_proc_file\n");
+	codec_status_proc_file = proc_create(CODEC_STATUS_PROC_FILE, 0666, NULL, &codec_status_proc_ops);
+
+	if (codec_status_proc_file == NULL)
+		printk("[Audio][Debug] create_codec_status_proc_file failed\n");
+}
+
+static void remove_audio_debug_proc_file(void)
+{
+	extern struct proc_dir_entry proc_root;
+	printk("[Audio][Debug] remove_audio_debug_proc_file\n");
+	remove_proc_entry(AUDIO_DEBUG_PROC_FILE, &proc_root);
+}
+
+static void remove_codec_status_proc_file(void)
+{
+	extern struct proc_dir_entry proc_root;
+	printk("[Audio][Debug] remove_codec_status_proc_file\n");
+	remove_proc_entry(CODEC_STATUS_PROC_FILE, &proc_root);
+}
+#endif /* #ifdef CONFIG_PROC_FS */
+/* ASUS_BSP Paul --- */
+
 static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 {
 	struct sdm660_cdc_priv *sdm660_cdc;
@@ -4224,6 +4435,50 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 	/* Set initial cap mode */
 	msm_anlg_cdc_configure_cap(codec, false, false);
 
+	/* ASUS_BSP Paul +++ */
+	registered_codec = codec;
+	g_sdm660_cdc_priv = sdm660_cdc;
+
+	ret = gpio_request(AUDIO_DEBUG_GPIO, "AUDIO_DEBUG");
+	if (ret)
+		printk("%s: Failed to request gpio AUDIO_DEBUG %d\n", __func__, AUDIO_DEBUG_GPIO);
+#ifndef ASUS_USER_BUILD
+#ifdef CONFIG_BOOTDBGUART
+	else if (g_bootdbguart_y) {
+		printk("%s: g_bootdbguart_y = true\n", __func__);
+		gpio_direction_output(AUDIO_DEBUG_GPIO, 0); /* enable uart log, disable audio */
+		g_DebugMode = 1;
+		wcd_mbhc_plug_detect_for_debug_mode(&g_sdm660_cdc_priv->mbhc, 1);
+	}
+#endif
+#endif
+	else {
+		printk("%s: g_bootdbguart_y = false\n", __func__);
+		gpio_direction_output(AUDIO_DEBUG_GPIO, 1); /* disable uart log, enable audio */
+		g_DebugMode = 0;
+		wcd_mbhc_plug_detect_for_debug_mode(&g_sdm660_cdc_priv->mbhc, 0);
+	}
+
+	/* ASUS_BSP Paul +++ */
+        if (!g_audiowizard_force_preset_sdev) {
+		g_audiowizard_force_preset_sdev = kzalloc(sizeof(struct switch_dev), GFP_KERNEL);
+		if (!g_audiowizard_force_preset_sdev) {
+			pr_err("%s: failed to allocate switch_dev\n", __func__);
+			ret = -ENOMEM;
+		}
+		g_audiowizard_force_preset_sdev->name = "audiowizard_force_preset";
+		g_audiowizard_force_preset_sdev->state = 0;
+		ret = switch_dev_register(g_audiowizard_force_preset_sdev);
+		if (ret < 0)
+			pr_err("%s: failed to register switch audiowizard_force_preset\n", __func__);
+	}
+	/* ASUS_BSP Paul --- */
+#ifdef CONFIG_PROC_FS
+	create_audio_debug_proc_file();
+	create_codec_status_proc_file();
+#endif
+	/* ASUS_BSP Paul --- */
+
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Playback");
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Capture");
 
@@ -4242,6 +4497,13 @@ static int msm_anlg_cdc_soc_remove(struct snd_soc_codec *codec)
 	atomic_set(&sdm660_cdc_priv->on_demand_list[ON_DEMAND_MICBIAS].ref,
 		   0);
 	wcd_mbhc_deinit(&sdm660_cdc_priv->mbhc);
+
+/* ASUS_BSP Paul +++ */
+#ifdef CONFIG_PROC_FS
+	remove_audio_debug_proc_file();
+	remove_codec_status_proc_file();
+#endif
+/* ASUS_BSP Paul --- */
 
 	return 0;
 }

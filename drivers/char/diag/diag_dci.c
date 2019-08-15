@@ -863,7 +863,7 @@ static void dci_process_ctrl_status(unsigned char *buf, int len, int token)
 	read_len += sizeof(struct diag_ctrl_dci_status);
 
 	for (i = 0; i < header->count; i++) {
-		if (read_len > len) {
+		if (read_len > (len - 2)) {
 			pr_err("diag: In %s, Invalid length len: %d\n",
 			       __func__, len);
 			return;
@@ -1162,17 +1162,30 @@ void extract_dci_events(unsigned char *buf, int len, int data_source,
 	struct list_head *start, *temp;
 	struct diag_dci_client_tbl *entry = NULL;
 
-	length = *(uint16_t *)(buf + 1); /* total length of event series */
-	if (length == 0) {
-		pr_err("diag: Incoming dci event length is invalid\n");
+	if (!buf) {
+		pr_err("diag: In %s buffer is NULL\n", __func__);
 		return;
 	}
-	/*
-	 * Move directly to the start of the event series. 1 byte for
-	 * event code and 2 bytes for the length field.
+	/* 1 byte for event code and 2 bytes for the length field.
+
 	 * The length field indicates the total length removing the cmd_code
 	 * and the lenght field. The event parsing in that case should happen
 	 * till the end.
+	 */
+	if (len < 3) {
+		pr_err("diag: In %s invalid len: %d\n", __func__, len);
+		return;
+	}
+	length = *(uint16_t *)(buf + 1); /* total length of event series */
+	if ((length == 0) || (len != (length + 3))) {
+		pr_err("diag: Incoming dci event length: %d is invalid\n",
+			length);
+		return;
+	}
+	/*
+	 * Move directly to the start of the event series.
+	 * The event parsing should happen from start of event
+	 * series till the end.
 	 */
 	temp_len = 3;
 	while (temp_len < length) {

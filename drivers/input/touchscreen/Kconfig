@@ -11,7 +11,9 @@ menuconfig INPUT_TOUCHSCREEN
 
 if INPUT_TOUCHSCREEN
 
-source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
+#source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
+source "drivers/input/touchscreen/focaltech_touch/Kconfig"
+source "drivers/input/touchscreen/synaptics_dsx_aq/Kconfig"
 
 config OF_TOUCHSCREEN
 	def_tristate INPUT
@@ -621,6 +623,14 @@ config TOUCHSCREEN_EDT_FT5X06
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called edt-ft5x06.
+
+config TOUCHSCREEN_FTS
+	bool "Focaltech Touchscreens"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have Focaltech touch panel.
+	  If unsure, say N.
 
 config TOUCHSCREEN_MIGOR
 	tristate "Renesas MIGO-R touchscreen"

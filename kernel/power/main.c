@@ -20,6 +20,10 @@
 
 DEFINE_MUTEX(pm_mutex);
 
+//ASUS_BSP +++
+extern bool rtc_wake_control; /* /kernel/msm-4.4/drivers/rtc/qpnp-rtc.c ,default is N */
+//ASUS_BSP ---
+
 #ifdef CONFIG_PM_SLEEP
 
 /* Routines for PM-transition notifications */
@@ -352,6 +356,11 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 	return PM_SUSPEND_ON;
 }
 
+//ASUS_BSP +++
+/*Add a timer to trigger wakelock debug*/
+extern struct timer_list unattended_timer; /* unattended_timer_expired() kernel/kernel/power/suspend.c*/
+/* PM_UNATTENDED_TIMEOUT   <-power.h <-suspend.h */
+//ASUS_BSP ---
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
@@ -368,12 +377,27 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 	state = decode_state(buf, n);
-	if (state < PM_SUSPEND_MAX)
+
+//ASUS_BSP +++
+	if (state < PM_SUSPEND_MAX) {
+		printk("[PM] decode_state() and call pm_suspend(state=%d)\n", state);
+		if (state == PM_SUSPEND_ON) {
+			printk("[PM]unattended_timer: del_timer (due to state ON)\n");
+			del_timer(&unattended_timer);
+		} else{
+			//Add a timer to trigger wakelock debug
+			printk("[PM]unattended_timer: mod_timer (due to state != ON)\n");
+			g_unattended_timeout = PM_UNATTENDED_TIMEOUT_START;
+			mod_timer(&unattended_timer, jiffies + msecs_to_jiffies(g_unattended_timeout)); /* PM_UNATTENDED_TIMEOUT, include  <-power.h <-suspend.h */
+			//[---]Debug for active wakelock before entering suspend
+		}
 		error = pm_suspend(state);
-	else if (state == PM_SUSPEND_MAX)
+	} else if (state == PM_SUSPEND_MAX) {
 		error = hibernate();
-	else
+	} else{
 		error = -EINVAL;
+	}
+//ASUS_BSP ---
 
  out:
 	pm_autosleep_unlock();
@@ -381,6 +405,38 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(state);
+
+//ASUS_BSP +++ Add unattended_timer power_attr to trigger unattended timer
+static ssize_t unattended_timer_show(struct kobject *kobj, struct kobj_attribute *attr,
+			  char *buf)
+{
+	printk("[PM]unattended_timer: power_attr,unattended_timer_show() \n");
+	strcpy(buf, "pre-mem");
+	return sizeof(buf);
+}
+
+static ssize_t unattended_timer_store(struct kobject *kobj, struct kobj_attribute *attr,
+			   const char *buf, size_t n)
+{
+	int error;
+	printk("[PM]unattended_timer: power_attr,unattended_timer_store() \n");
+	//Add a timer to trigger wakelock debug
+
+	if (strcmp(buf, "pre-mem")==0) {
+		printk("[PM]unattended_timer: mod_timer (unattended_timer_store Mem)\n");
+		g_unattended_timeout = PM_UNATTENDED_TIMEOUT_START;
+		mod_timer(&unattended_timer, jiffies + msecs_to_jiffies(g_unattended_timeout));
+		error = n;
+	} else {
+		pr_info("[PM]unattended_timer: No Match. buf:%s, size:%d \n", buf, (int)n);
+		error = -EINVAL;
+	}
+
+	return error;
+}
+
+power_attr(unattended_timer);
+//ASUS_BSP --- Add unattended_timer power_attr to trigger unattended timer
 
 #ifdef CONFIG_PM_SLEEP
 /*
@@ -481,6 +537,7 @@ static ssize_t autosleep_store(struct kobject *kobj,
 	suspend_state_t state = decode_state(buf, n);
 	int error;
 
+	printk("[PM] autosleep_store(): %s\n", buf); //ASUS_BSP +
 	if (state == PM_SUSPEND_ON
 	    && strcmp(buf, "off") && strcmp(buf, "off\n"))
 		return -EINVAL;
@@ -504,7 +561,12 @@ static ssize_t wake_lock_store(struct kobject *kobj,
 			       struct kobj_attribute *attr,
 			       const char *buf, size_t n)
 {
-	int error = pm_wake_lock(buf);
+//ASUS_BSP +++
+	int error = 0;
+	if (!rtc_wake_control) {
+		error = pm_wake_lock(buf);
+	}
+//ASUS_BSP ---
 	return error ? error : n;
 }
 
@@ -595,6 +657,8 @@ power_attr(pm_freeze_timeout);
 
 static struct attribute * g[] = {
 	&state_attr.attr,
+/* Add unattended_timer power_attr to trigger unattended timer */
+	&unattended_timer_attr.attr,
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
 	&pm_trace_dev_match_attr.attr,

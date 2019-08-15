@@ -63,6 +63,28 @@ static void scm_disable_sdi(void);
  * So the SDI cannot be re-enabled when it already by-passed.
 */
 
+#ifdef ASUS_SHIP_BUILD
+int download_mode = 0;
+#else
+int download_mode = 1;
+#endif
+
+//+++ ASUS_BSP : set download mode cmdline
+int g_force_ramdump = 0;
+static int set_download_mode(char *str)
+{
+	if ( strcmp("y", str) == 0 ) {
+		download_mode = 1;
+		g_force_ramdump = 1;
+	} else
+		download_mode = 0;
+
+	printk("download mode = %d\n",download_mode);
+	return 0;
+}
+__setup("RDUMP=", set_download_mode);
+//--- ASUS_BSP : set download mode cmdline
+
 #ifdef CONFIG_QCOM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"
@@ -72,7 +94,7 @@ static void scm_disable_sdi(void);
 
 static int in_panic;
 static int dload_type = SCM_DLOAD_FULLDUMP;
-static int download_mode = 1;
+//static int download_mode = 1;
 static struct kobject dload_kobj;
 static void *dload_mode_addr, *dload_type_addr;
 static bool dload_mode_enabled;
@@ -134,7 +156,7 @@ int scm_set_dload_mode(int arg1, int arg2)
 				&desc);
 }
 
-static void set_dload_mode(int on)
+void set_dload_mode(int on)
 {
 	int ret;
 
@@ -157,6 +179,11 @@ static bool get_dload_mode(void)
 	return dload_mode_enabled;
 }
 
+//Asus_BSP +++ CVE-2017-13174
+#if defined(ASUS_USER_BUILD)
+       //remove "reboot edl" interface for security
+#else
+//Asus_BSP --- CVE-2017-13174
 static void enable_emergency_dload_mode(void)
 {
 	int ret;
@@ -181,6 +208,9 @@ static void enable_emergency_dload_mode(void)
 	if (ret)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
+//Asus_BSP +++ CVE-2017-13174
+#endif
+//Asus_BSP --- CVE-2017-13174
 
 static int dload_set(const char *val, struct kernel_param *kp)
 {
@@ -202,7 +232,7 @@ static int dload_set(const char *val, struct kernel_param *kp)
 	return 0;
 }
 #else
-static void set_dload_mode(int on)
+void set_dload_mode(int on)
 {
 	return;
 }
@@ -270,6 +300,7 @@ static void halt_spmi_pmic_arbiter(void)
 
 static void msm_restart_prepare(const char *cmd)
 {
+    ulong *printk_buffer_slot2_addr;
 	bool need_warm_reset = false;
 
 #ifdef CONFIG_QCOM_DLOAD_MODE
@@ -285,12 +316,12 @@ static void msm_restart_prepare(const char *cmd)
 
 	if (qpnp_pon_check_hard_reset_stored()) {
 		/* Set warm reset as true when device is in dload mode */
-		if (get_dload_mode() ||
+		if (get_dload_mode() ||  in_panic ||
 			((cmd != NULL && cmd[0] != '\0') &&
 			!strcmp(cmd, "edl")))
 			need_warm_reset = true;
 	} else {
-		need_warm_reset = (get_dload_mode() ||
+		need_warm_reset = (get_dload_mode() || in_panic ||
 				(cmd != NULL && cmd[0] != '\0'));
 	}
 
@@ -299,6 +330,12 @@ static void msm_restart_prepare(const char *cmd)
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 	} else {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+	}
+
+	if (!in_panic) {
+		// Normal reboot. Clean the printk buffer magic
+		printk_buffer_slot2_addr = (ulong *)PRINTK_BUFFER_SLOT2;
+		*printk_buffer_slot2_addr = 0;
 	}
 
 	if (cmd != NULL) {
@@ -326,6 +363,22 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_KEYS_CLEAR);
 			__raw_writel(0x7766550a, restart_reason);
+		// +++ ASUS_BSP: add asus reboot reason for ATD interface
+		} else if (!strcmp(cmd, "shutdown")) {
+		qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_SHUTDOWN);
+			__raw_writel(0x6f656d88, restart_reason);
+		} else if (!strcmp(cmd, "EnterShippingMode")) {
+		qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_SHIPMODE);
+			__raw_writel(0x6f656d43, restart_reason);
+		// --- ASUS_BSP: add asus reboot reason for ATD interface
+		// +++ ASUS_BSP PeterYeh: add for asus user unlock
+		} else if (!strncmp(cmd, "app-unlock", 10)) {
+				qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_UNLOCK);
+			__raw_writel(0x6f656d08, restart_reason);
+		// --- ASUS_BSP PeterYeh: add for asus user unlock
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -333,8 +386,16 @@ static void msm_restart_prepare(const char *cmd)
 			if (!ret)
 				__raw_writel(0x6f656d00 | (code & 0xff),
 					     restart_reason);
+		//Asus_BSP +++ CVE-2017-13174
+		#if defined(ASUS_USER_BUILD)
+		//remove "reboot edl" interface for security
+		#else
+		//Asus_BSP --- CVE-2017-13174
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+		//Asus_BSP +++ CVE-2017-13174
+		#endif
+		//Asus_BSP --- CVE-2017-13174
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
@@ -398,8 +459,15 @@ static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 
 static void do_msm_poweroff(void)
 {
+	ulong *printk_buffer_slot2_addr;
 	pr_notice("Powering off the SoC\n");
 
+	// Normal power off. Clean the printk buffer magic
+	printk_buffer_slot2_addr = (ulong *)PRINTK_BUFFER_SLOT2;
+	*printk_buffer_slot2_addr = 0;
+
+	printk(KERN_CRIT "Clean asus_global...\n");
+	flush_cache_all();
 	set_dload_mode(0);
 	scm_disable_sdi();
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);

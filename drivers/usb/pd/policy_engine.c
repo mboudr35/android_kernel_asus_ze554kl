@@ -37,6 +37,15 @@ MODULE_PARM_DESC(usb_compliance_mode, "Start USB stack for USB3.1 compliance tes
 static bool disable_usb_pd;
 module_param(disable_usb_pd, bool, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(disable_usb_pd, "Disable USB PD for USB3.1 compliance testing");
+#ifdef CONFIG_ASUS_PD_CHARGER
+#define ASUS_PD_INPUT_VOL_CFG_9V 9000000	// 9V
+#define ASUS_PD_INPUT_VOL_CFG_7_5V 7500000	// 7.5V
+#define ASUS_PD_INPUT_VOL_CFG_5V 5000000	// 5V
+#define ASUS_PD_ICL_CUR_CFG_3A 3000000		// 3A
+#define ASUS_PD_ICL_CUR_CFG_2A 2000000		// 2A
+#define ASUS_PD_ICL_CUR_CFG_1_67A 1670000	// 1.67A
+#define ASUS_PD_ICL_CUR_CFG_1_5A 1500000	// 1.5A
+#endif
 
 enum usbpd_state {
 	PE_UNKNOWN,
@@ -377,6 +386,9 @@ struct usbpd {
 	struct list_head	svid_handlers;
 
 	struct list_head	instance;
+#ifdef CONFIG_ASUS_PD_CHARGER
+	int			src_cap_cnt;
+#endif
 };
 
 static LIST_HEAD(_usbpd);	/* useful for debugging */
@@ -511,7 +523,11 @@ static int pd_select_pdo(struct usbpd *pd, int pdo_pos, int uv, int ua)
 
 	type = PD_SRC_PDO_TYPE(pdo);
 	if (type == PD_SRC_PDO_TYPE_FIXED) {
+#ifdef CONFIG_ASUS_PD_CHARGER
+		curr = max_current = ua / 1000;
+#else
 		curr = max_current = PD_SRC_PDO_FIXED_MAX_CURR(pdo) * 10;
+#endif
 
 		/*
 		 * Check if the PDO has enough current, otherwise set the
@@ -555,6 +571,93 @@ static int pd_select_pdo(struct usbpd *pd, int pdo_pos, int uv, int ua)
 	return 0;
 }
 
+#ifdef CONFIG_ASUS_PD_CHARGER
+static int pd_eval_src_caps_asus(struct usbpd *pd)
+{
+	union power_supply_propval val;
+	int i = 0, index = 0;
+	int cur_mw = 0, cur_uv = 0, cur_ua = 0;
+	int pre_mw = 0, pre_uv = 0, pre_ua = 0;
+	int pdo_candidate = 0, pdo_candidate_9v = 0;
+
+	for (i = 0; i < pd->src_cap_cnt; i++) {
+		if (PD_SRC_PDO_TYPE(pd->received_pdos[i]) != PD_SRC_PDO_TYPE_FIXED) {
+			usbpd_err(&pd->dev, "src_cap %d invalid! %08x\n", i, pd->received_pdos[i]);
+			continue;
+		}
+
+		cur_uv = PD_SRC_PDO_FIXED_VOLTAGE(pd->received_pdos[i]) * 50 * 1000;
+		cur_ua = PD_SRC_PDO_FIXED_MAX_CURR(pd->received_pdos[i]) * 10 * 1000;
+
+		if (ASUS_PD_INPUT_VOL_CFG_5V == cur_uv) {
+			cur_ua = (cur_ua > ASUS_PD_ICL_CUR_CFG_3A) ? ASUS_PD_ICL_CUR_CFG_3A : cur_ua;
+		} else if (cur_uv > ASUS_PD_INPUT_VOL_CFG_5V && cur_uv <= ASUS_PD_INPUT_VOL_CFG_7_5V) {
+			cur_ua = (cur_ua > ASUS_PD_ICL_CUR_CFG_2A) ? ASUS_PD_ICL_CUR_CFG_2A : cur_ua;
+		} else if (cur_uv > ASUS_PD_INPUT_VOL_CFG_7_5V&& cur_uv <= ASUS_PD_INPUT_VOL_CFG_9V) {
+			cur_ua = (cur_ua > ASUS_PD_ICL_CUR_CFG_1_67A) ? ASUS_PD_ICL_CUR_CFG_1_67A : cur_ua;
+		} else {
+			usbpd_err(&pd->dev, "pdo-%d: uv (%d), ua (%d), out of spec! skip!\n", i, cur_uv, cur_ua);
+			continue;
+		}
+
+		pdo_candidate = 0;
+		cur_mw = (cur_uv / 1000) * (cur_ua / 1000);
+		usbpd_info(&pd->dev, "pdo-%d: uv (%d), ua (%d), mw (%d) meet spec!\n", i, cur_uv, cur_ua, cur_mw);
+
+		/*
+		  *	Limit Input Current:
+		  *	ICL_CFG Rule: (by PDO Voltage)
+		  *	Vin = 5V			=> Set I Adp_max = min(3A, I PDO )
+		  *	5V < Vin <= 7.5V	=> Set I Adp_max = min(2A, I PDO )
+		  *	7.5V < Vin <= 9V	=> Set I Adp_max = min(1.67A, I PDO )
+		  *	9V < Vin			=> Set I Adp_max = 0A
+		  *
+		  *	PDO Select Condition:
+		  *	1. Max Padp profile
+		  *	2. If two Padp profiles are the same:
+		  * 		- Selecting the one Vin = 9V
+		  *		- If there is no pdo with Vin = 9V, selecting the one Vin is smaller.
+		  */
+		if (cur_mw > pre_mw) {
+			pdo_candidate = 1;
+			if (ASUS_PD_INPUT_VOL_CFG_9V == cur_uv) {
+				pdo_candidate_9v = 1;
+			} else {
+				pdo_candidate_9v = 0;
+			}
+		} else if (cur_mw == pre_mw && !pdo_candidate_9v) {
+			if (ASUS_PD_INPUT_VOL_CFG_9V == cur_uv) {
+				pdo_candidate = 1;
+				pdo_candidate_9v = 1;
+			} else if (cur_uv <  pre_uv) {
+				pdo_candidate = 1;
+			}
+		}
+
+		if (pdo_candidate) {
+			pre_mw = cur_mw;
+			pre_uv = cur_uv;
+			pre_ua = cur_ua;
+			index = i;
+			usbpd_info(&pd->dev, "pdo-%d: uv (%d), ua (%d), candidate!\n", i, pre_uv, pre_ua);
+		}
+	}
+
+	usbpd_info(&pd->dev, "[USB][PD] pdo-%d: uv (%d), ua (%d), selected!\n", index, pre_uv, pre_ua);
+
+	pd->peer_usb_comm = PD_SRC_PDO_FIXED_USB_COMM(pd->received_pdos[index]);
+	pd->peer_pr_swap = PD_SRC_PDO_FIXED_PR_SWAP(pd->received_pdos[index]);
+	pd->peer_dr_swap = PD_SRC_PDO_FIXED_DR_SWAP(pd->received_pdos[index]);
+
+	val.intval = PD_SRC_PDO_FIXED_USB_SUSP(pd->received_pdos[index]);
+	power_supply_set_property(pd->usb_psy,
+			POWER_SUPPLY_PROP_PD_USB_SUSPEND_SUPPORTED, &val);
+
+	pd_select_pdo(pd, index + 1, pre_uv, pre_ua);
+
+	return 0;
+}
+#else
 static int pd_eval_src_caps(struct usbpd *pd)
 {
 	int obj_cnt;
@@ -586,6 +689,7 @@ static int pd_eval_src_caps(struct usbpd *pd)
 
 	return 0;
 }
+#endif
 
 static void pd_send_hard_reset(struct usbpd *pd)
 {
@@ -988,7 +1092,11 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 		pd->hard_reset_count = 0;
 
 		/* evaluate PDOs and select one */
+#ifdef CONFIG_ASUS_PD_CHARGER
+		ret = pd_eval_src_caps_asus(pd);
+#else
 		ret = pd_eval_src_caps(pd);
+#endif
 		if (ret < 0) {
 			usbpd_err(&pd->dev, "Invalid src_caps received. Skipping request\n");
 			break;
@@ -1944,6 +2052,9 @@ static void usbpd_sm(struct work_struct *w)
 					sizeof(pd->received_pdos));
 			pd->src_cap_id++;
 
+#ifdef CONFIG_ASUS_PD_CHARGER
+			pd->src_cap_cnt = rx_msg->len;
+#endif
 			usbpd_set_state(pd, PE_SNK_EVALUATE_CAPABILITY);
 
 			val.intval = 1;
@@ -2978,6 +3089,11 @@ static ssize_t select_pdo_store(struct device *dev,
 	int src_cap_id;
 	int pdo, uv = 0, ua = 0;
 	int ret;
+
+#ifdef CONFIG_ASUS_PD_CHARGER
+	usbpd_info(&pd->dev, "ignore select pdo by userspace\n");
+	return size;
+#endif
 
 	mutex_lock(&pd->swap_lock);
 

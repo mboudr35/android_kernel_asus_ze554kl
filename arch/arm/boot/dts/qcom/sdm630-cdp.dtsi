@@ -83,11 +83,11 @@
 		compatible = "qcom,msm-ssc-sensors";
 	};
 };
-
+/*
 &pm660_charger {
 	qcom,batteryless-platform;
 };
-
+*/
 &sdhc_1 {
 	/* device core power supply */
 	vdd-supply = <&pm660l_l4>;

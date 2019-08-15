@@ -332,7 +332,7 @@ struct request_queue {
 	 */
 	struct delayed_work	delay_work;
 
-	struct backing_dev_info	backing_dev_info;
+	struct backing_dev_info	*backing_dev_info;
 
 	/*
 	 * The queue owner gets to use this for whatever they like.
@@ -434,8 +434,10 @@ struct request_queue {
 	/*
 	 * for flush operations
 	 */
+#ifndef BLOCK_WRITE_CACHE
 	unsigned int		flush_flags;
 	unsigned int		flush_not_queueable:1;
+#endif
 	struct blk_flush_queue	*fq;
 
 	struct list_head	requeue_list;
@@ -492,7 +494,14 @@ struct request_queue {
 #define QUEUE_FLAG_INIT_DONE   20	/* queue is initialized */
 #define QUEUE_FLAG_NO_SG_MERGE 21	/* don't attempt to merge SG segments*/
 #define QUEUE_FLAG_POLL	       22	/* IO polling enabled if set */
+#ifdef BLOCK_WRITE_CACHE
+#define QUEUE_FLAG_WC	       23	/* Write back caching */
+#define QUEUE_FLAG_FUA	       24	/* device supports FUA writes */
+#define QUEUE_FLAG_FLUSH_NQ    25	/* flush not queueuable */
+#define QUEUE_FLAG_FAST        26	/* fast block device (e.g. ram based) */
+#else
 #define QUEUE_FLAG_FAST        23	/* fast block device (e.g. ram based) */
+#endif
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
@@ -1007,9 +1016,14 @@ extern void blk_queue_update_dma_alignment(struct request_queue *, int);
 extern void blk_queue_softirq_done(struct request_queue *, softirq_done_fn *);
 extern void blk_queue_rq_timed_out(struct request_queue *, rq_timed_out_fn *);
 extern void blk_queue_rq_timeout(struct request_queue *, unsigned int);
+#ifndef BLOCK_WRITE_CACHE
 extern void blk_queue_flush(struct request_queue *q, unsigned int flush);
+#endif
 extern void blk_queue_flush_queueable(struct request_queue *q, bool queueable);
 extern struct backing_dev_info *blk_get_backing_dev_info(struct block_device *bdev);
+#ifdef BLOCK_WRITE_CACHE
+extern void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua);
+#endif
 
 extern int blk_rq_map_sg(struct request_queue *, struct request *, struct scatterlist *);
 extern int blk_rq_map_sg_no_cluster
@@ -1364,7 +1378,11 @@ static inline unsigned int block_size(struct block_device *bdev)
 
 static inline bool queue_flush_queueable(struct request_queue *q)
 {
+#ifdef BLOCK_WRITE_CACHE
+	return !test_bit(QUEUE_FLAG_FLUSH_NQ, &q->queue_flags);
+#else
 	return !q->flush_not_queueable;
+#endif
 }
 
 typedef struct {struct page *v;} Sector;

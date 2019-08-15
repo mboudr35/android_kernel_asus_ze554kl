@@ -128,12 +128,232 @@ static char *initcall_command_line;
 static char *execute_command;
 static char *ramdisk_execute_command;
 
+
+//+++ ASUS_BSP : miniporting : Add for audio dbg mode
+int g_user_dbg_mode = 1;
+EXPORT_SYMBOL(g_user_dbg_mode);
+
+static int set_user_dbg_mode(char *str)
+{
+	if (strcmp("y", str) == 0)
+		g_user_dbg_mode = 1;
+	else
+		g_user_dbg_mode = 0;
+	g_user_dbg_mode = 1;
+	printk("Kernel dbg mode = %d\n", g_user_dbg_mode);
+	return 0;
+}
+__setup("dbg=", set_user_dbg_mode);
+
+int g_ftm_mode = 0;
+EXPORT_SYMBOL(g_ftm_mode);
+
+static int set_ftm_mode(char *str)
+{
+    if ( strcmp("1", str) == 0 )
+    {
+        g_ftm_mode = 1;
+    }
+    else
+    {
+        g_ftm_mode = 0;
+    }
+    printk("androidboot.pre-ftm= %d\n",  g_ftm_mode);
+    return 0;
+}
+__setup("androidboot.pre-ftm=", set_ftm_mode);
+//--- ASUS_BSP : miniporting : Add for audio dbg mode
+
+//+++ ASUS_BSP : set recovery cmdline
+bool g_recovery_mode = false;
+static int set_recovery_mode(char *str)
+{
+	g_recovery_mode = true;
+	printk("Recovery mode = %d\n",g_recovery_mode);
+	return 0;
+}
+__setup("recovery", set_recovery_mode);
+//---ASUS_BSP : set recovery cmdline
+
+//ASUS_BSP Austin_T : add for kernel charger mode +++
+bool g_Charger_mode = false;
+static int set_charger_mode(char *str)
+{
+    if ( strcmp("charger", str) == 0 )
+        g_Charger_mode = true;
+    else
+        g_Charger_mode = false;
+
+    printk("g_Charger_mode = %d\n", g_Charger_mode);
+    return 0;
+}
+__setup("androidboot.mode=", set_charger_mode);
+EXPORT_SYMBOL(g_Charger_mode);
+//ASUS_BSP Austin_T : add for kernel charger mode ---
+
+//ASUS_BSP Austin_T : add for usb alert & low impedance status & water proof +++
+bool g_usb_alert_mode = false;
+static int set_usb_alert_mode(char *str)
+{
+    if ( strcmp("1", str) == 0 )
+        g_usb_alert_mode = true;
+    else
+        g_usb_alert_mode = false;
+
+    printk("g_usb_alert_mode = %d\n", g_usb_alert_mode);
+    return 0;
+}
+__setup("Therm.Alert=", set_usb_alert_mode);
+EXPORT_SYMBOL(g_usb_alert_mode);
+
+bool g_low_impedance_mode = false;
+static int set_low_impedance_mode(char *str)
+{
+    if ( strcmp("1", str) == 0 )
+        g_low_impedance_mode = true;
+    else
+        g_low_impedance_mode = false;
+
+    printk("g_low_impedance_mode = %d\n", g_low_impedance_mode);
+    return 0;
+}
+__setup("Low.IM=", set_low_impedance_mode);
+EXPORT_SYMBOL(g_low_impedance_mode);
+
+bool g_water_proof_mode = false;
+static int set_water_proof_mode(char *str)
+{
+    if ( strcmp("1", str) == 0 )
+        g_water_proof_mode = true;
+    else
+        g_water_proof_mode = false;
+
+    printk("g_water_proof_mode = %d\n", g_water_proof_mode);
+    return 0;
+}
+__setup("Water.PF=", set_water_proof_mode);
+EXPORT_SYMBOL(g_water_proof_mode);
+//ASUS_BSP Austin_T : add for usb alert & low impedance status & water proof ---
+
 /*
  * Used to generate warnings if static_key manipulation functions are used
  * before jump_label_init is called.
  */
 bool static_key_initialized __read_mostly;
 EXPORT_SYMBOL_GPL(static_key_initialized);
+
+//+++ ASUS_BSP: parsing lcd unique id from aboot
+char lcd_unique_id[64] = {0};
+EXPORT_SYMBOL(lcd_unique_id);
+
+static int get_lcd_uniqueId(char *str)
+{
+    strncpy(lcd_unique_id, str, sizeof(lcd_unique_id));
+    printk("lcd_unique_id = %s\n ", lcd_unique_id);
+
+	return 0;
+}
+__setup("LCD=", get_lcd_uniqueId);
+
+//+++ ASUS_BSP : miniporting
+
+// ASUS_BSP +++ Jiunhau_Wang [ZE554KL][DM][NA][NA] get permissive status
+int permissive_enable = 0;
+EXPORT_SYMBOL(permissive_enable);
+static int get_permissive_status(char *str)
+{
+	
+	if( strcmp("permissive", str) == 0 )
+	{
+		permissive_enable = 1;
+		printk("permissive = %d\n", permissive_enable);
+	}
+
+	return 0;
+}
+__setup("androidboot.selinux=", get_permissive_status);
+// ASUS_BSP --- Jiunhau_Wang [ZE554KL][DM][NA][NA] get permissive status
+
+enum DEVICE_HWID g_ASUS_hwID=ZE554KL_UNKNOWN;
+
+EXPORT_SYMBOL(g_ASUS_hwID);
+
+static int set_hardware_id(char *str)
+{
+	// ZE554KL
+	if ( strcmp("0", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_EVB;
+		printk("Kernel HW ID = ZE554KL_EVB\n");
+	}	
+	else if ( strcmp("1", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_SR;
+		printk("Kernel HW ID = ZE554KL_SR\n");
+	}
+	else if ( strcmp("2", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_ER1;
+		printk("Kernel HW ID = ZE554KL_ER1\n");
+	}
+	else if ( strcmp("3", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_ER2;
+		printk("Kernel HW ID = ZE554KL_ER2\n");
+	}
+	else if ( strcmp("4", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_PR;
+		printk("Kernel HW ID = ZE554KL_PR\n");
+	}
+	else if ( strcmp("5", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_PR2;
+		printk("Kernel HW ID = ZE554KL_PR2\n");
+	}
+	else if ( strcmp("7", str) == 0 )
+	{
+		g_ASUS_hwID = ZE554KL_MP;
+		printk("Kernel HW ID = ZE554KL_MP\n");
+	}
+	printk("g_Asus_hwID = %d\n", g_ASUS_hwID);
+
+	return 0;
+}
+ __setup("androidboot.id.stage=", set_hardware_id);
+//--- ASUS_BSP : miniporting
+
+//+++ ASUS_BSP : miniporting
+enum DEVICE_HWID g_ASUS_prjID=ZE554KL_UNKNOWN;
+
+EXPORT_SYMBOL(g_ASUS_prjID);
+
+ static int set_project_id(char *str)
+ {
+	// ZE554KL PRJECT
+	if ( strcmp("5", str) == 0 )
+	{
+		g_ASUS_prjID = ZE554KL_660_PRJ_ID;
+		printk("Kernel PRJ ID = ZE554KL_660\n");
+	}
+	else if ( strcmp("7", str) == 0 )
+	{
+		g_ASUS_prjID = ZE554KL_630_PRJ_ID;
+		printk("Kernel PRJ ID = ZE554KL_630\n");
+	}
+	else
+	{
+		g_ASUS_prjID = UNKNOWN_PRJ;
+		printk("Kernel PRJ ID = UNKNOWN\n");
+	}	
+
+	printk("g_ASUS_prjID = %d\n", g_ASUS_prjID);
+
+	return 0;
+
+}
+ __setup("androidboot.id.prj=", set_project_id);
+//--- ASUS_BSP : miniporting
 
 /*
  * If set, this is an indication to the drivers that reset the underlying
@@ -763,14 +983,22 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 	unsigned long long duration;
 	int ret;
 
-	printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
+	if (initcall_debug)
+		printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
 	calltime = ktime_get();
 	ret = fn();
 	rettime = ktime_get();
 	delta = ktime_sub(rettime, calltime);
 	duration = (unsigned long long) ktime_to_ns(delta) >> 10;
-	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
-		 fn, ret, duration);
+	if (initcall_debug)
+		printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n",
+			 fn, ret, duration);
+
+	if (initcall_debug == 0) {
+		if (duration > 100000)
+			printk(KERN_WARNING "[debuginit] initcall %pF returned %d after %lld usecs\n", fn,
+				ret, duration);
+	}
 
 	return ret;
 }
@@ -784,10 +1012,9 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
-	if (initcall_debug)
+
 		ret = do_one_initcall_debug(fn);
-	else
-		ret = fn();
+
 
 	msgbuf[0] = 0;
 

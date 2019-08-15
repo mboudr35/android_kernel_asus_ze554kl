@@ -1841,9 +1841,10 @@ struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 	}
 
 	pdata->status_gpio = of_get_named_gpio_flags(np, "cd-gpios", 0, &flags);
-	if (gpio_is_valid(pdata->status_gpio) && !(flags & OF_GPIO_ACTIVE_LOW))
+	if (gpio_is_valid(pdata->status_gpio) && !(flags & OF_GPIO_ACTIVE_LOW)){
+		printk("[SD] MMC_CAP2_CD_ACTIVE_HIGH\n");
 		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
-
+	}
 	of_property_read_u32(np, "qcom,bus-width", &bus_width);
 	if (bus_width == 8)
 		pdata->mmc_bus_width = MMC_CAP_8_BIT_DATA;
@@ -2367,8 +2368,15 @@ static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata,
 		goto out;
 	}
 
-	vreg_table[0] = curr_slot->vdd_data;
-	vreg_table[1] = curr_slot->vdd_io_data;
+	//ASUS_BSP : adjust SD power off sequence +++
+	if (!strcmp(pdata->name,"mmc1") && !enable) {
+		vreg_table[1] = curr_slot->vdd_data;
+		vreg_table[0] = curr_slot->vdd_io_data;
+	} else {
+		vreg_table[0] = curr_slot->vdd_data;
+		vreg_table[1] = curr_slot->vdd_io_data;
+	}
+	//ASUS_BSP : adjust SD power off sequence ---
 
 	for (i = 0; i < ARRAY_SIZE(vreg_table); i++) {
 		if (vreg_table[i]) {
@@ -4237,6 +4245,7 @@ static bool sdhci_msm_is_bootdevice(struct device *dev)
 	return true;
 }
 
+extern void create_emmc_health_proc_file(void);  //ASUS_BSP Deeo : add proc file node for eMMC health +++
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	const struct sdhci_msm_offset *msm_host_offset;
@@ -4278,6 +4287,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pltfm_host->priv = msm_host;
 	msm_host->mmc = host->mmc;
 	msm_host->pdev = pdev;
+
+	printk("[MMC] hostname : %s\n", mmc_hostname(msm_host->mmc));
 
 	/* get the ice device vops if present */
 	ret = sdhci_msm_ice_get_dev(host);
@@ -4335,6 +4346,14 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "DT parsing error\n");
 			goto pltfm_free;
 		}
+
+		//ASUS_BSP Deeo : add host_name to pdata +++
+		if (!strcmp(mmc_hostname(msm_host->mmc),"mmc1"))
+			msm_host->pdata->name = "mmc1";
+		else
+			msm_host->pdata->name = "";
+		//ASUS_BSP Deeo : add host_name to pdata ---
+
 	} else {
 		dev_err(&pdev->dev, "No device tree node\n");
 		goto pltfm_free;
@@ -4741,6 +4760,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		       mmc_hostname(host->mmc), __func__, ret);
 		device_remove_file(&pdev->dev, &msm_host->auto_cmd21_attr);
 	}
+
+	//ASUS BSP Deeo : create proc file +++
+	if (!strcmp("mmc0",mmc_hostname(host->mmc))) {
+		create_emmc_health_proc_file();
+	}
+	//ASUS BSP Deeo : create proc file ---
+
 	if (sdhci_msm_is_bootdevice(&pdev->dev))
 		mmc_flush_detect_work(host->mmc);
 

@@ -453,11 +453,19 @@ static inline long snd_ctl_ioctl_compat(struct file *file, unsigned int cmd, uns
 	struct snd_kctl_ioctl *p;
 	void __user *argp = compat_ptr(arg);
 	int err;
+	long res;	// ASUS_BSP Shawn_Huang --- For restart SSC
 
 	ctl = file->private_data;
 	if (snd_BUG_ON(!ctl || !ctl->card))
 		return -ENXIO;
-
+// ASUS_BSP Shawn_Huang +++ For restart SSC
+	if (SNDRV_CTL_IOCTL_ELEM_WRITE32 == cmd) {
+		set_audio_mutex_lock();
+		res = snd_ctl_elem_write_user_compat(ctl, argp);
+		set_audio_mutex_unlock();
+		return res;
+	}
+// ASUS_BSP Shawn_Huang --- For restart SSC
 	switch (cmd) {
 	case SNDRV_CTL_IOCTL_PVERSION:
 	case SNDRV_CTL_IOCTL_CARD_INFO:
@@ -477,8 +485,6 @@ static inline long snd_ctl_ioctl_compat(struct file *file, unsigned int cmd, uns
 		return snd_ctl_elem_info_compat(ctl, argp);
 	case SNDRV_CTL_IOCTL_ELEM_READ32:
 		return snd_ctl_elem_read_user_compat(ctl->card, argp);
-	case SNDRV_CTL_IOCTL_ELEM_WRITE32:
-		return snd_ctl_elem_write_user_compat(ctl, argp);
 	case SNDRV_CTL_IOCTL_ELEM_ADD32:
 		return snd_ctl_elem_add_compat(ctl, argp, 0);
 	case SNDRV_CTL_IOCTL_ELEM_REPLACE32:

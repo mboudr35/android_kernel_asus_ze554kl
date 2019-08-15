@@ -49,6 +49,7 @@ enum {
 	SLIM_MAX,
 };
 
+#if 0
 /*TDM default offset currently only supporting TDM_RX_0 and TDM_TX_0 */
 static unsigned int tdm_slot_offset[TDM_PORT_MAX][TDM_SLOT_OFFSET_MAX] = {
 	{0, 4, 8, 12, 16, 20, 24, 28},/* TX_0 | RX_0 */
@@ -60,6 +61,7 @@ static unsigned int tdm_slot_offset[TDM_PORT_MAX][TDM_SLOT_OFFSET_MAX] = {
 	{AFE_SLOT_MAPPING_OFFSET_INVALID},/* TX_6 | RX_6 */
 	{AFE_SLOT_MAPPING_OFFSET_INVALID},/* TX_7 | RX_7 */
 };
+#endif
 
 static struct afe_clk_set int_mi2s_clk[INT_MI2S_MAX] = {
 	{
@@ -1223,14 +1225,14 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 */
 	btn_low[0] = 75;
 	btn_high[0] = 75;
-	btn_low[1] = 150;
-	btn_high[1] = 150;
+	btn_low[1] = 125;
+	btn_high[1] = 125;
 	btn_low[2] = 225;
 	btn_high[2] = 225;
-	btn_low[3] = 450;
-	btn_high[3] = 450;
-	btn_low[4] = 500;
-	btn_high[4] = 500;
+	btn_low[3] = 437;
+	btn_high[3] = 437;
+	btn_low[4] = 437;
+	btn_high[4] = 437;
 
 	return msm_int_wcd_cal;
 }
@@ -1268,8 +1270,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "Handset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Headset Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Secondary Mic");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
-	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic2");
 
 	snd_soc_dapm_ignore_suspend(dapm, "EAR");
 	snd_soc_dapm_ignore_suspend(dapm, "HEADPHONE");
@@ -1277,10 +1277,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC3");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC1");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC2");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC3");
-	snd_soc_dapm_ignore_suspend(dapm, "DMIC4");
 
 	snd_soc_dapm_sync(dapm);
 
@@ -1395,6 +1391,7 @@ exit:
 	return ret;
 }
 
+#if 0
 static unsigned int tdm_param_set_slot_mask(u16 port_id, int slot_width,
 					    int slots)
 {
@@ -1545,6 +1542,7 @@ static int msm_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 end:
 	return ret;
 }
+#endif
 
 static int msm_snd_card_late_probe(struct snd_soc_card *card)
 {
@@ -1576,9 +1574,11 @@ static int msm_snd_card_late_probe(struct snd_soc_card *card)
 	return ret;
 }
 
+#if 0
 static struct snd_soc_ops msm_tdm_be_ops = {
 	.hw_params = msm_tdm_snd_hw_params
 };
+#endif
 
 static struct snd_soc_ops msm_wcn_ops = {
 	.hw_params = msm_wcn_hw_params,
@@ -2473,6 +2473,7 @@ static struct snd_soc_dai_link msm_int_be_dai[] = {
 		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
+#if 0
 	{
 		.name = LPASS_BE_PRI_TDM_RX_0,
 		.stream_name = "Primary TDM0 Playback",
@@ -2585,6 +2586,7 @@ static struct snd_soc_dai_link msm_int_be_dai[] = {
 		.ops = &msm_tdm_be_ops,
 		.ignore_suspend = 1,
 	},
+#endif
 };
 
 static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {

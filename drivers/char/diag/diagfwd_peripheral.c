@@ -1408,7 +1408,6 @@ void diagfwd_write_done(uint8_t peripheral, uint8_t type, int buf_num)
 	if (buf_num == 1 && fwd_info->buf_1) {
 		/* Buffer 1 for core PD is freed */
 		fwd_info->cpd_len_1 = 0;
-
 		if (peripheral == PERIPHERAL_LPASS) {
 			if (!fwd_info->upd_len_1_a &&
 				!fwd_info->upd_len_2_a)
@@ -1505,7 +1504,6 @@ void diagfwd_write_done(uint8_t peripheral, uint8_t type, int buf_num)
 			"Buffer 1 for core PD is marked free, p: %d, t: %d, buf_num: %d\n",
 				fwd_info->peripheral, fwd_info->type, buf_num);
 		}
-
 		fwd_info->upd_len_2_a = 0;
 
 	} else if (buf_num == 6 && fwd_info->buf_upd_2_b && fwd_info->buf_2) {

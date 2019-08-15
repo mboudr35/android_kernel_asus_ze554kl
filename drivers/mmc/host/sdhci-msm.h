@@ -153,6 +153,7 @@ struct sdhci_msm_pltfm_data {
 	u32 ice_clk_min;
 	struct sdhci_msm_pm_qos_data pm_qos_data;
 	bool sdr104_wa;
+	char *name;		//ASUS_BSP Deeo : add host_name to pdata +++
 };
 
 struct sdhci_msm_bus_vote {

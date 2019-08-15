@@ -1522,14 +1522,16 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 					__func__, __LINE__,
 					power_setting->seq_val, ctrl->num_vreg);
 
-			rc = msm_cam_sensor_handle_reg_gpio(
-				power_setting->seq_val,
-				ctrl->gpio_conf, 1);
-			if (rc < 0) {
-				pr_err("ERR:%s Error in handling VREG GPIO\n",
-					__func__);
-				goto power_up_failed;
-			}
+                    if (ctrl->gpio_conf->cam_gpio_req_tbl && ctrl->gpio_conf->cam_gpio_req_tbl_size) { //ASUS_BSP PJ_Ma +++ "add to check gpio pin if been defined in dtsi"
+				rc = msm_cam_sensor_handle_reg_gpio(
+					power_setting->seq_val,
+					ctrl->gpio_conf, 1);
+				if (rc < 0) {
+					pr_err("ERR:%s Error in handling VREG GPIO\n",
+						__func__);
+					goto power_up_failed;
+				}
+			}//ASUS_BSP PJ_Ma --- "add to check gpio pin if been defined in dtsi"
 			break;
 		case SENSOR_I2C_MUX:
 			if (ctrl->i2c_conf && ctrl->i2c_conf->use_i2c_mux)
@@ -1715,11 +1717,13 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 			} else
 				pr_err("%s error in power up/down seq data\n",
 								__func__);
-			ret = msm_cam_sensor_handle_reg_gpio(pd->seq_val,
-				ctrl->gpio_conf, GPIOF_OUT_INIT_LOW);
-			if (ret < 0)
-				pr_err("ERR:%s Error while disabling VREG GPIO\n",
-					__func__);
+			if (ctrl->gpio_conf->cam_gpio_req_tbl && ctrl->gpio_conf->cam_gpio_req_tbl_size) { //ASUS_BSP PJ_Ma +++ "add to check gpio pin if been defined in dtsi"
+				ret = msm_cam_sensor_handle_reg_gpio(pd->seq_val,
+					ctrl->gpio_conf, GPIOF_OUT_INIT_LOW);
+				if (ret < 0)
+					pr_err("ERR:%s Error while disabling VREG GPIO\n",
+						__func__);
+			}//ASUS_BSP PJ_Ma --- "add to check gpio pin if been defined in dtsi"
 			break;
 		case SENSOR_I2C_MUX:
 			if (ctrl->i2c_conf && ctrl->i2c_conf->use_i2c_mux)

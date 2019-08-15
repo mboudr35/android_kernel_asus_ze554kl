@@ -448,6 +448,8 @@ static int pl_fcc_vote_callback(struct votable *votable, void *data,
 		}
 	}
 
+	printk("[BAT][CHG] pl_fcc_vote_callback: total_fcc = %d, master_fcc = %d, slave_fcc = %d\n", 
+		total_fcc_ua, master_fcc_ua, slave_fcc_ua);
 	pl_dbg(chip, PR_PARALLEL, "master_fcc=%d slave_fcc=%d distribution=(%d/%d)\n",
 		   master_fcc_ua, slave_fcc_ua,
 		   (master_fcc_ua * 100) / total_fcc_ua,

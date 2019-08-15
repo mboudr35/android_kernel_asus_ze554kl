@@ -1084,6 +1084,10 @@ fb_blank(struct fb_info *info, int blank)
 }
 EXPORT_SYMBOL(fb_blank);
 
+//ASUS_BSP: DISP +++
+bool tcon_cmd_fence = false;
+EXPORT_SYMBOL(tcon_cmd_fence);
+
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg, struct file *file)
 {
@@ -1207,16 +1211,23 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		console_unlock();
 		break;
 	case FBIOBLANK:
-		console_lock();
+		//ASUS_BSP: Austin +++
+		printk("[Display] FBIOBLANK(%d)+++\n", (int) arg);
+		if ((int) arg==4)
+			tcon_cmd_fence = true;
+		//console_lock();
 		if (!lock_fb_info(info)) {
-			console_unlock();
+			//console_unlock();
 			return -ENODEV;
 		}
 		info->flags |= FBINFO_MISC_USEREVENT;
 		ret = fb_blank(info, arg);
 		info->flags &= ~FBINFO_MISC_USEREVENT;
 		unlock_fb_info(info);
-		console_unlock();
+		//console_unlock();
+		printk("[Display] FBIOBLANK(%d)---\n", (int) arg);
+		if ((int) arg==0)
+			tcon_cmd_fence = false;		
 		break;
 	default:
 		fb = info->fbops;

@@ -71,6 +71,23 @@ struct msm_pinctrl {
 	void __iomem *regs;
 };
 
+//ASUS BSP PeterYeh: add for debug mask +++
+//Debug Levels
+#define NO_DEBUG       0
+#define DEBUG_POWER     1
+#define DEBUG_INFO  2
+#define DEBUG_VERBOSE 5
+#define DEBUG_RAW      8
+#define DEBUG_TRACE   10
+
+static int debug = DEBUG_INFO;
+
+module_param(debug, int, 0644);
+MODULE_PARM_DESC(debug, "Activate debugging output");
+
+#define pinctrl_debug(level, ...) do { if (debug >= (level)) pr_info(__VA_ARGS__); } while (0)
+//ASUS BSP PeterYeh: add for debug mask --- 
+
 static struct msm_pinctrl *msm_pinctrl_data;
 
 static inline struct msm_pinctrl *to_msm_pinctrl(struct gpio_chip *gc)
@@ -1015,3 +1032,153 @@ int msm_pinctrl_remove(struct platform_device *pdev)
 }
 EXPORT_SYMBOL(msm_pinctrl_remove);
 
+//ASUS BSP PeterYeh : dump all gpio regiser function +++
+static bool dump_all_gpio = true;
+static u8 part=0;
+static int get_pinctrl_all_gp_dump(char *buffer, const struct kernel_param *kp)
+{
+	struct msm_pinctrl *pctrl = msm_pinctrl_data;
+	const struct msm_pingroup *t_groups;
+	int count = 0;
+	u8 index = 0, max_num = (pctrl->soc->ngpios)/2;
+	u32 cfg_val, inout_val;
+	unsigned int pin_no = 0;
+
+	count = sprintf(buffer, "========== Start dump GPIO part %d==========\n", (part%2)+1);
+	count += sprintf(buffer + count, "Total GPIO pins : %d\n", pctrl->soc->ngpios);
+	if (part%2){
+		index = (pctrl->soc->ngpios)/2;
+		max_num = pctrl->soc->ngpios;
+	}
+
+	for (pin_no = index; pin_no < max_num; pin_no++) {
+		if((pin_no > 7) && (pin_no < 12)){
+			count += sprintf(buffer + count, "[GP][%03d] cannot read GPIO register.\n", pin_no);
+		}else{
+			t_groups = &pctrl->soc->groups[pin_no];
+			cfg_val = readl(pctrl->regs + t_groups->ctl_reg);
+			inout_val = readl(pctrl->regs + t_groups->io_reg);
+			count += sprintf(buffer + count, "[GP][%03d] cfg_val  :0x%04x , inout_val:0x%04x\n", pin_no, cfg_val, inout_val);
+		}
+	}
+
+	part++;
+	return count;
+}
+static struct kernel_param_ops dump_all_gp_ops = {
+	.get = get_pinctrl_all_gp_dump,
+};
+module_param_cb(dump_all_gpio, &dump_all_gp_ops, &dump_all_gpio, 0644);
+MODULE_PARM_DESC(dump_all_gpio, "Dump GPIO register.");
+//ASUS BSP PeterYeh : dump all gpio regiser function ---
+
+//ASUS BSP PeterYeh : dump specific gpio regiser function +++
+static bool gpio = true;
+static unsigned int gpio_index = 0;
+static int set_pinctrl_gp_dump(const char *val, const struct kernel_param *kp)
+{
+	int ret = 0;
+
+	ret = kstrtouint(val, 10, &gpio_index);
+	if (ret < 0)
+		return -EINVAL;
+
+	return 0;
+}
+static int get_pinctrl_gp_dump(char *buffer, const struct kernel_param *kp)
+{
+	struct msm_pinctrl *pctrl = msm_pinctrl_data;
+	const struct msm_pingroup *t_groups;
+	int count = 0;
+	u8 bias, func, drv_ma, direct, value;
+	u32 cfg_val, inout_val;
+	int res = 0;
+
+	if(gpio_index > (pctrl->soc->ngpios-1)) {
+		count = sprintf(buffer, "[GP][%03d] is not exist!!! Total pins are 0 ~ %d\n", gpio_index, (pctrl->soc->ngpios-1));
+		return count;
+	}
+
+	if((gpio_index > 7) && (gpio_index < 12)){
+		count = sprintf(buffer, "[GP][%03d] is not supported in current debug tool.\n", gpio_index);
+		return count;
+	}
+
+	res = gpio_request(gpio_index, "asus_bsp_debug");
+	pinctrl_debug(DEBUG_INFO, "[Peter++] res = %d\n", res);
+
+	t_groups = &pctrl->soc->groups[gpio_index];
+	cfg_val = readl(pctrl->regs + t_groups->ctl_reg);
+	inout_val = readl(pctrl->regs + t_groups->io_reg);
+	
+	count = sprintf(buffer, "[GP][%03d] cfg_val  :0x%04x , inout_val:0x%04x\n", gpio_index, cfg_val, inout_val);
+
+	bias = cfg_val & 0x3;
+	func = (cfg_val & 0x3C) >> 2;
+	drv_ma = (cfg_val & 0x1c0) >> 6;
+	direct = (cfg_val & 0x200) >> 9;
+	value = inout_val & 0x1;
+
+	printk("[Pinctrl] [GP][%03d] bias 0x%x func 0x%x drv_ma 0x%x direct 0x%x value 0x%x\n", gpio_index, bias, func, drv_ma, direct, value);
+
+	count += sprintf(buffer+count, "          ");
+	count += sprintf(buffer+count, "%s_",direct?"OUTPUT":"INPUT" );
+	count += sprintf(buffer+count, "%s, ",value?"H":"L" );
+	count += sprintf(buffer+count, "BIAS_");
+	switch(bias){
+		case 0:
+			count += sprintf(buffer+count, "NO_PULL, ");
+		break;
+		case 1:
+			count += sprintf(buffer+count, "PULL_DOWN, ");
+		break;
+		case 2:
+			count += sprintf(buffer+count, "KEEPER, ");
+		break;
+		case 3:
+			count += sprintf(buffer+count, "PULL_UP, ");
+		break;
+		default:
+			count += sprintf(buffer+count, "UNKNOW, ");
+		break;
+	}
+
+	count += sprintf(buffer+count, "DRV_");
+	switch(drv_ma){
+		case 0:
+			count += sprintf(buffer+count, "2_MA, ");
+		break;
+		case 1:
+			count += sprintf(buffer+count, "4_MA, ");
+		break;
+		case 2:
+			count += sprintf(buffer+count, "6_MA, ");
+		break;
+		case 3:
+			count += sprintf(buffer+count, "8_MA, ");
+		break;
+		case 4:
+			count += sprintf(buffer+count, "10_MA, ");
+		break;
+		case 5:
+			count += sprintf(buffer+count, "12_MA, ");
+		break;
+		case 6:
+			count += sprintf(buffer+count, "14_MA, ");
+		break;
+		case 7:
+			count += sprintf(buffer+count, "16_MA, ");
+		break;
+		default:
+			count += sprintf(buffer+count, "UNKNOW, ");
+	}
+	count += sprintf(buffer+count, "FUN_%d\n", func);
+	return count;
+}
+static struct kernel_param_ops dump_gp_ops = {
+	.set = set_pinctrl_gp_dump,
+	.get = get_pinctrl_gp_dump,
+};
+module_param_cb(gpio, &dump_gp_ops, &gpio, 0644);
+MODULE_PARM_DESC(gpio, "Dump GPIO register.");
+//ASUS BSP PeterYeh : dump specific gpio regiser function ---

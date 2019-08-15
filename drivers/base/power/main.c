@@ -38,6 +38,14 @@
 #include "../base.h"
 #include "power.h"
 
+//ASUS_BSP +++
+/*[PM] pm_pwrcs_ret:
+	This flag mean dpm_suspend has been callback.
+	pm_pwrcs_ret will be cheked in function which is resume_console in printk.c
+*/
+unsigned int pm_pwrcs_ret=0;
+//ASUS_BSP ---
+
 typedef int (*pm_callback_t)(struct device *);
 
 /*
@@ -355,8 +363,13 @@ static void pm_dev_dbg(struct device *dev, pm_message_t state, char *info)
 static void pm_dev_err(struct device *dev, pm_message_t state, char *info,
 			int error)
 {
-	printk(KERN_ERR "PM: Device %s failed to %s%s: error %d\n",
+	printk("[PM]: Device %s failed to %s%s: error %d\n",
 		dev_name(dev), pm_verb(state.event), info, error);
+
+//ASUS_BSP +++ [PM] Add suspend fail log to ASUSevtlog when pm_dev_err
+	ASUSEvtlog("PM: Device %s failed to %s%s: error %d\n",
+		dev_name(dev), pm_verb(state.event), info, error);
+//ASUS_BSP --- [PM] Add suspend fail log to ASUSevtlog when pm_dev_err
 }
 
 static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
@@ -844,6 +857,10 @@ void dpm_resume(pm_message_t state)
 	struct device *dev;
 	ktime_t starttime = ktime_get();
 
+	ktime_t time_enter,time_exit;
+	u64 usecs64;
+	int usecs;
+
 	trace_suspend_resume(TPS("dpm_resume"), state.event, true);
 	might_sleep();
 
@@ -860,6 +877,7 @@ void dpm_resume(pm_message_t state)
 	}
 
 	while (!list_empty(&dpm_suspended_list)) {
+		time_enter = ktime_get();
 		dev = to_device(dpm_suspended_list.next);
 		get_device(dev);
 		if (!is_async(dev)) {
@@ -880,6 +898,14 @@ void dpm_resume(pm_message_t state)
 		if (!list_empty(&dev->power.entry))
 			list_move_tail(&dev->power.entry, &dpm_prepared_list);
 		put_device(dev);
+
+		time_exit = ktime_get();
+		usecs64 = ktime_to_ns(ktime_sub(time_exit, time_enter));
+		do_div(usecs64, NSEC_PER_USEC);
+		usecs = usecs64;
+		if (usecs > 300000) { //300ms
+			pr_info("PM: %s: dev_name=%s took about %ld msecs to resume!\n",__func__,dev_name(dev),usecs / USEC_PER_MSEC);
+		}
 	}
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
@@ -1535,6 +1561,7 @@ int dpm_suspend(pm_message_t state)
 		if (async_error)
 			break;
 	}
+	pm_pwrcs_ret = 1; //ASUS_BSP + [PM] This flag can check dpm_suspend state for resume_console in printk.c
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
 	if (!error)

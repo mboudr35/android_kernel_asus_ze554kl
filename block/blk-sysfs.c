@@ -75,7 +75,7 @@ queue_requests_store(struct request_queue *q, const char *page, size_t count)
 
 static ssize_t queue_ra_show(struct request_queue *q, char *page)
 {
-	unsigned long ra_kb = q->backing_dev_info.ra_pages <<
+	unsigned long ra_kb = q->backing_dev_info->ra_pages <<
 					(PAGE_CACHE_SHIFT - 10);
 
 	return queue_var_show(ra_kb, (page));
@@ -90,7 +90,7 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 	if (ret < 0)
 		return ret;
 
-	q->backing_dev_info.ra_pages = ra_kb >> (PAGE_CACHE_SHIFT - 10);
+	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_CACHE_SHIFT - 10);
 
 	return ret;
 }
@@ -348,6 +348,42 @@ static ssize_t queue_poll_store(struct request_queue *q, const char *page,
 	return ret;
 }
 
+#ifdef BLOCK_WRITE_CACHE
+
+static ssize_t queue_wc_show(struct request_queue *q, char *page)
+{
+	if (test_bit(QUEUE_FLAG_WC, &q->queue_flags))
+		return sprintf(page, "write back\n");
+
+	return sprintf(page, "write through\n");
+}
+
+static ssize_t queue_wc_store(struct request_queue *q, const char *page,
+			      size_t count)
+{
+	int set = -1;
+
+	if (!strncmp(page, "write back", 10))
+		set = 1;
+	else if (!strncmp(page, "write through", 13) ||
+		 !strncmp(page, "none", 4))
+		set = 0;
+
+	if (set == -1)
+		return -EINVAL;
+
+	spin_lock_irq(q->queue_lock);
+	if (set)
+		queue_flag_set(QUEUE_FLAG_WC, q);
+	else
+		queue_flag_clear(QUEUE_FLAG_WC, q);
+	spin_unlock_irq(q->queue_lock);
+
+	return count;
+}
+
+#endif //#ifdef BLOCK_WRITE_CACHE
+
 static struct queue_sysfs_entry queue_requests_entry = {
 	.attr = {.name = "nr_requests", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_requests_show,
@@ -479,6 +515,14 @@ static struct queue_sysfs_entry queue_poll_entry = {
 	.store = queue_poll_store,
 };
 
+#ifdef BLOCK_WRITE_CACHE
+static struct queue_sysfs_entry queue_wc_entry = {
+	.attr = {.name = "write_cache", .mode = S_IRUGO | S_IWUSR },
+	.show = queue_wc_show,
+	.store = queue_wc_store,
+};
+#endif //#ifdef BLOCK_WRITE_CACHE
+
 static struct attribute *default_attrs[] = {
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
@@ -504,6 +548,9 @@ static struct attribute *default_attrs[] = {
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
 	&queue_poll_entry.attr,
+#ifdef BLOCK_WRITE_CACHE
+	&queue_wc_entry.attr,
+#endif
 	NULL,
 };
 
@@ -578,7 +625,7 @@ static void blk_release_queue(struct kobject *kobj)
 	struct request_queue *q =
 		container_of(kobj, struct request_queue, kobj);
 
-	bdi_exit(&q->backing_dev_info);
+	bdi_put(q->backing_dev_info);
 	blkcg_exit_queue(q);
 
 	if (q->elevator) {

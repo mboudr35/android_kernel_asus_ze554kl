@@ -29,6 +29,7 @@
 #include <sound/minors.h>
 #include <sound/info.h>
 #include <sound/control.h>
+#include <linux/proc_fs.h>	// ASUS_BSP Shawn_Huang --- For restart SSC
 
 /* max number of user-defined controls */
 #define MAX_USER_CONTROLS	32
@@ -44,6 +45,21 @@ static LIST_HEAD(snd_control_ioctls);
 #ifdef CONFIG_COMPAT
 static LIST_HEAD(snd_control_compat_ioctls);
 #endif
+
+// ASUS_BSP Shawn_Huang +++ For restart SSC
+static struct mutex g_audio_lock;
+static int audio_counter = 0;
+
+void set_audio_mutex_lock(void) {
+	mutex_lock(&g_audio_lock);
+}
+EXPORT_SYMBOL(set_audio_mutex_lock);
+
+void set_audio_mutex_unlock(void) {
+	mutex_unlock(&g_audio_lock);
+}
+EXPORT_SYMBOL(set_audio_mutex_unlock);
+// ASUS_BSP Shawn_Huang --- For restart SSC
 
 static int snd_ctl_open(struct inode *inode, struct file *file)
 {
@@ -1467,11 +1483,31 @@ static long snd_ctl_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	void __user *argp = (void __user *)arg;
 	int __user *ip = argp;
 	int err;
+	long res;	// ASUS_BSP Shawn_Huang --- For restart SSC
 
 	ctl = file->private_data;
 	card = ctl->card;
 	if (snd_BUG_ON(!card))
 		return -ENXIO;
+	
+// ASUS_BSP Shawn_Huang +++ For restart SSC	
+	if (SNDRV_CTL_IOCTL_ELEM_WRITE == cmd) {
+		set_audio_mutex_lock();
+		res = snd_ctl_elem_write_user(ctl, argp);
+		set_audio_mutex_unlock();
+		return res;
+	} else if (SNDRV_CTL_IOCTL_TLV_WRITE ==cmd) {
+		set_audio_mutex_lock();
+		res = snd_ctl_tlv_ioctl(ctl, argp, SNDRV_CTL_TLV_OP_WRITE);
+		set_audio_mutex_unlock();
+		return res;
+	} else if (SNDRV_CTL_IOCTL_TLV_COMMAND ==cmd) {
+		set_audio_mutex_lock();
+		res = snd_ctl_tlv_ioctl(ctl, argp, SNDRV_CTL_TLV_OP_CMD);
+		set_audio_mutex_unlock();
+		return res;
+	} 
+// ASUS_BSP Shawn_Huang --- For restart SSC	
 	switch (cmd) {
 	case SNDRV_CTL_IOCTL_PVERSION:
 		return put_user(SNDRV_CTL_VERSION, ip) ? -EFAULT : 0;
@@ -1483,8 +1519,6 @@ static long snd_ctl_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		return snd_ctl_elem_info_user(ctl, argp);
 	case SNDRV_CTL_IOCTL_ELEM_READ:
 		return snd_ctl_elem_read_user(card, argp);
-	case SNDRV_CTL_IOCTL_ELEM_WRITE:
-		return snd_ctl_elem_write_user(ctl, argp);
 	case SNDRV_CTL_IOCTL_ELEM_LOCK:
 		return snd_ctl_elem_lock(ctl, argp);
 	case SNDRV_CTL_IOCTL_ELEM_UNLOCK:
@@ -1499,10 +1533,6 @@ static long snd_ctl_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		return snd_ctl_subscribe_events(ctl, ip);
 	case SNDRV_CTL_IOCTL_TLV_READ:
 		return snd_ctl_tlv_ioctl(ctl, argp, SNDRV_CTL_TLV_OP_READ);
-	case SNDRV_CTL_IOCTL_TLV_WRITE:
-		return snd_ctl_tlv_ioctl(ctl, argp, SNDRV_CTL_TLV_OP_WRITE);
-	case SNDRV_CTL_IOCTL_TLV_COMMAND:
-		return snd_ctl_tlv_ioctl(ctl, argp, SNDRV_CTL_TLV_OP_CMD);
 	case SNDRV_CTL_IOCTL_POWER:
 		return -ENOPROTOOPT;
 	case SNDRV_CTL_IOCTL_POWER_STATE:
@@ -1731,6 +1761,59 @@ EXPORT_SYMBOL_GPL(snd_ctl_get_preferred_subdevice);
 /*
  *  INIT PART
  */
+// ASUS_BSP Shawn_Huang +++ For restart SSC
+static int audio_lock_proc_read(struct seq_file *buf, void *v)
+{
+	printk("%s: %d\n", __func__, audio_counter);
+	seq_printf(buf, "%d\n", audio_counter);
+	return 0;
+}
+static int audio_status_proc_open(struct inode *inode, struct  file *file)
+{
+    return single_open(file, audio_lock_proc_read, NULL);
+}
+
+static ssize_t audio_lock_proc_write(struct file *filp, const char __user *buff,
+		size_t len, loff_t *data)
+{
+	int val;
+	char messages[256];
+	if (len > 256) {
+		len = 256;
+	}
+	if (copy_from_user(messages, buff, len)) {
+		return -EFAULT;
+	}
+
+	val = (int)simple_strtol(messages, NULL, 10);
+	
+	if (val == 1) {
+		audio_counter++;
+		mutex_lock(&g_audio_lock);
+	} else{
+		audio_counter--;
+		mutex_unlock(&g_audio_lock);
+	}
+
+	return len;
+}
+
+static void create_audio_lock_proc_file(void)
+{
+	static const struct file_operations proc_fops = {
+		.owner = THIS_MODULE,
+		.open =  audio_status_proc_open,
+		.write = audio_lock_proc_write,
+		.read = seq_read,
+		.release = single_release,
+	};
+	struct proc_dir_entry *proc_file = proc_create("audio_lock", 0664, NULL, &proc_fops);
+	if (!proc_file) {
+		printk("[Proc]%s failed!\n", __FUNCTION__);
+	}
+	return;
+}
+// ASUS_BSP Shawn_Huang --- For restart SSC
 
 static const struct file_operations snd_ctl_f_ops =
 {
@@ -1751,7 +1834,12 @@ static const struct file_operations snd_ctl_f_ops =
 static int snd_ctl_dev_register(struct snd_device *device)
 {
 	struct snd_card *card = device->device_data;
-
+// ASUS_BSP Shawn_Huang +++ For restart SSC
+	/* Initialize the Mutex */
+	mutex_init(&g_audio_lock);
+	printk("g_audio_lock init\n");
+	create_audio_lock_proc_file();
+// ASUS_BSP Shawn_Huang --- For restart SSC	
 	return snd_register_device(SNDRV_DEVICE_TYPE_CONTROL, card, -1,
 				   &snd_ctl_f_ops, card, &card->ctl_dev);
 }
@@ -1770,7 +1858,10 @@ static int snd_ctl_dev_disconnect(struct snd_device *device)
 		kill_fasync(&ctl->fasync, SIGIO, POLL_ERR);
 	}
 	read_unlock(&card->ctl_files_rwlock);
-
+// ASUS_BSP Shawn_Huang +++ For restart SSC	
+	mutex_destroy(&g_audio_lock);
+	printk("g_audio_lock destroy\n");
+// ASUS_BSP Shawn_Huang --- For restart SSC	
 	return snd_unregister_device(&card->ctl_dev);
 }
 

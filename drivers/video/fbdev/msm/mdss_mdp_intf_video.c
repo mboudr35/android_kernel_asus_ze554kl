@@ -2361,6 +2361,8 @@ void mdss_mdp_switch_to_cmd_mode(struct mdss_mdp_ctl *ctl, int prep)
 	mdss_bus_bandwidth_ctrl(false);
 }
 
+extern int g_fps_customise_update;
+
 static void early_wakeup_dfps_update_work(struct work_struct *work)
 {
 	struct mdss_mdp_video_ctx *ctx =
@@ -2421,6 +2423,10 @@ static void early_wakeup_dfps_update_work(struct work_struct *work)
 	}
 
 	data.fps = dfps;
+	//fix DFPS austin+++
+	if (g_fps_customise_update != pdata->panel_info.default_fps)
+		data.fps = g_fps_customise_update;
+
 	if (mdss_mdp_dfps_update_params(mfd, pdata, &data))
 		pr_err("failed to set dfps params!\n");
 

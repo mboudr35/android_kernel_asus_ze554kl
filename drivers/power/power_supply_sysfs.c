@@ -50,7 +50,7 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"TYPEC", "TYPEC_UFP", "TYPEC_DFP"
 	};
 	static char *status_text[] = {
-		"Unknown", "Charging", "Discharging", "Not charging", "Full"
+		"Unknown", "Charging", "Discharging", "Not charging", "Full", "Quick charging", "Not Quick charging", "Thermal Alert" //ASUS_BSP LiJen
 	};
 	static char *charge_type[] = {
 		"Unknown", "N/A", "Trickle", "Fast",
@@ -83,6 +83,14 @@ static ssize_t power_supply_show_property(struct device *dev,
 	static char *typec_pr_text[] = {
 		"none", "dual power role", "sink", "source"
 	};
+	//[+++]Add the interface for charging debug apk
+	static char *adapter_id_text[] = {
+		"NONE", "ASUS_750K", "ASUS_200K", "PB", "OTHERS", "ADC_NOT_READY"
+	};
+	static char *apsd_result_text[] = {
+		"UNKNOWN", "SDP", "CDP", "DCP", "OCP", "FLOAT", "HVDCP2", "HVDCP3"
+	};
+	//[---]Add the interface for charging debug apk	
 	ssize_t ret = 0;
 	struct power_supply *psy = dev_get_drvdata(dev);
 	const ptrdiff_t off = attr - power_supply_attrs;
@@ -129,6 +137,12 @@ static ssize_t power_supply_show_property(struct device *dev,
 		return sprintf(buf, "%s\n", health_text[value.intval]);
 	else if (off >= POWER_SUPPLY_PROP_MODEL_NAME)
 		return sprintf(buf, "%s\n", value.strval);
+	//[+++]Add the interface for charging debug apk
+	else if (off == POWER_SUPPLY_PROP_ASUS_ADAPTER_ID)
+		return sprintf(buf, "%s\n", adapter_id_text[value.intval]);
+	else if (off == POWER_SUPPLY_PROP_ASUS_APSD_RESULT)
+		return sprintf(buf, "%s\n", apsd_result_text[value.intval]);
+	//[---]Add the interface for charging debug apk_done
 
 	if (off == POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT)
 		return sprintf(buf, "%lld\n", value.int64val);
@@ -297,6 +311,13 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(connector_health),
 	POWER_SUPPLY_ATTR(ctm_current_max),
 	POWER_SUPPLY_ATTR(hw_current_max),
+	//[+++]Add the interface for charging debug apk
+	POWER_SUPPLY_ATTR(asus_apsd_result),
+	POWER_SUPPLY_ATTR(asus_adapter_id),
+	POWER_SUPPLY_ATTR(asus_is_legacy_cable),
+	POWER_SUPPLY_ATTR(asus_icl_setting),
+	POWER_SUPPLY_ATTR(asus_total_fcc),
+	//[---]Add the interface for charging debug apk	
 	POWER_SUPPLY_ATTR(real_type),
 	POWER_SUPPLY_ATTR(pr_swap),
 	POWER_SUPPLY_ATTR(cc_step),

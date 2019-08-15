@@ -17,7 +17,16 @@
 #include "msm_sd.h"
 #include "msm_cci.h"
 #include "msm_eeprom.h"
+//ASUS_BSP ZZ++
+#include <linux/fs.h>
+#include <asm/uaccess.h>
+#include <linux/device.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
+#undef pr_fmt
+#define pr_fmt(fmt) "%s:%d " fmt, __func__, __LINE__
+//ASUS_BSP ZZ++
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
@@ -26,6 +35,23 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
 
+//ASUS_BSP ZZ++
+#define STATUS_REAR_PROC_FILE  "driver/rear_eeprom"
+#define STATUS_FRONT_PROC_FILE "driver/front_eeprom"
+struct msm_eeprom_memory_block_t g_rear_eeprom_mapdata;
+struct msm_eeprom_memory_block_t g_front_eeprom_mapdata;
+static struct msm_eeprom_ctrl_t * g_e_ctrl = NULL;
+static void create_rear_proc_file(void);
+static void create_front_proc_file(void);
+static int rear_proc_read(struct seq_file *buf, void *v);
+static int front_proc_read(struct seq_file *buf, void *v);
+static void remove_file(void);
+struct msm_eeprom_ctrl_t * get_eeprom_ctrl(void)
+{
+	return g_e_ctrl;
+}
+//ASUS_BSP ZZ++
+	
 /**
   * msm_get_read_mem_size - Get the total size for allocation
   * @eeprom_map_array:	mem map
@@ -398,6 +424,13 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 					memptr,
 					eeprom_map->mem_settings[i].reg_data);
 				msleep(eeprom_map->mem_settings[i].delay);
+				//ASUS_BSP ZZ++
+				CDBG("MSM_CAM_READ addr=0x%x,reg_data=0x%x,memptr=0x%x\n"
+				,eeprom_map->mem_settings[i].reg_addr
+				,eeprom_map->mem_settings[i].reg_data
+				,*memptr
+				);
+				//ASUS_BSP ZZ++
 				if (rc < 0) {
 					pr_err("%s: read failed\n",
 						__func__);
@@ -1526,6 +1559,16 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		}
 		if (e_ctrl->cal_data.num_data == 0) {
 			rc = eeprom_init_config32(e_ctrl, argp);
+		          //ASUS_BSP ZZ++
+			if(e_ctrl->subdev_id == 0){
+				 create_rear_proc_file();
+				  g_rear_eeprom_mapdata = e_ctrl->cal_data;
+			}
+			else if(e_ctrl->subdev_id == 1) {
+				  create_front_proc_file();
+				   g_front_eeprom_mapdata = e_ctrl->cal_data;
+			}
+			//ASUS_BSP ZZ++
 			if (rc < 0)
 				pr_err("%s:%d Eeprom init failed\n",
 					__func__, __LINE__);
@@ -1578,7 +1621,94 @@ static long msm_eeprom_subdev_fops_ioctl32(struct file *file, unsigned int cmd,
 }
 
 #endif
+//ASUS_BSP ZZ++
+static struct proc_dir_entry *status_proc_file;
 
+static int rear_proc_read(struct seq_file *buf, void *v)
+{
+	int i;
+	CDBG("g_eeprom_mapdata num_map:%d num_data:%d",g_rear_eeprom_mapdata.num_map, g_rear_eeprom_mapdata.num_data);
+	if (!g_rear_eeprom_mapdata.mapdata)
+		return -EFAULT;
+	for( i = 0; i < g_rear_eeprom_mapdata.num_data; i++)
+	{
+		seq_printf(buf, "0x%02X ",g_rear_eeprom_mapdata.mapdata[i]);
+		seq_printf(buf ,"\n");
+	}
+	return 0;
+}
+
+static int front_proc_read(struct seq_file *buf, void *v)
+{
+	int i;
+	CDBG("g_eeprom_mapdata num_map:%d num_data:%d",g_front_eeprom_mapdata.num_map, g_front_eeprom_mapdata.num_data);
+	if (!g_front_eeprom_mapdata.mapdata)
+		return -EFAULT;
+	for( i = 0; i < g_front_eeprom_mapdata.num_data; i++)
+	{
+		seq_printf(buf, "0x%02X ",g_front_eeprom_mapdata.mapdata[i]);
+		seq_printf(buf ,"\n");
+	}
+	return 0;
+
+}
+
+static int rear_proc_open(struct inode *inode, struct  file *file)
+{
+    return single_open(file, rear_proc_read, NULL);
+}
+
+static int front_proc_open(struct inode *inode, struct  file *file)
+{
+    return single_open(file, front_proc_read, NULL);
+}
+
+static const struct file_operations rear_status_fops = {
+	.owner = THIS_MODULE,
+	.open = rear_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static const struct file_operations front_status_fops = {
+	.owner = THIS_MODULE,
+	.open = front_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static void create_rear_proc_file(void)
+{
+
+        status_proc_file = proc_create(STATUS_REAR_PROC_FILE, 0666, NULL, &rear_status_fops);
+	if(status_proc_file) {
+			CDBG("%s sucessed!\n", __func__);
+	    } else {
+			pr_err("%s failed!\n", __func__);
+	    }
+}
+
+static void create_front_proc_file(void)
+{
+		status_proc_file = proc_create(STATUS_FRONT_PROC_FILE, 0666, NULL, &front_status_fops);
+
+	if(status_proc_file) {
+		CDBG("%s sucessed!\n", __func__);
+    } else {
+		pr_err("%s failed!\n", __func__);
+    }
+}
+
+static void remove_file(void)
+{
+    extern struct proc_dir_entry proc_root;
+    pr_info("remove_file\n");
+    remove_proc_entry(STATUS_REAR_PROC_FILE, &proc_root);
+	remove_proc_entry(STATUS_FRONT_PROC_FILE, &proc_root);
+}
+//ASUS_BSP ZZ++
 static int msm_eeprom_platform_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -1591,7 +1721,7 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	struct device_node *of_node = pdev->dev.of_node;
 	struct msm_camera_power_ctrl_t *power_info = NULL;
 
-	CDBG("%s E\n", __func__);
+	pr_err("Randy %s E\n", __func__);
 
 	e_ctrl = kzalloc(sizeof(*e_ctrl), GFP_KERNEL);
 	if (!e_ctrl) {
@@ -1760,6 +1890,7 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 #endif
 
 	e_ctrl->is_supported = (e_ctrl->is_supported << 1) | 1;
+	g_e_ctrl = e_ctrl; //ASUS_BSP PJ_Ma+++
 	CDBG("%s X\n", __func__);
 	return rc;
 
@@ -1802,7 +1933,7 @@ static int msm_eeprom_platform_remove(struct platform_device *pdev)
 		&e_ctrl->eboard_info->power_info.clk_info,
 		&e_ctrl->eboard_info->power_info.clk_ptr,
 		e_ctrl->eboard_info->power_info.clk_info_size);
-
+	remove_file();//ASUS_BSP ZZ++
 	kfree(e_ctrl->i2c_client.cci_client);
 	kfree(e_ctrl->cal_data.mapdata);
 	kfree(e_ctrl->cal_data.map);

@@ -79,5 +79,5 @@
 };
 
 &msm_sdw_codec {
-	status = "okay";
+	status = "disabled";
 };

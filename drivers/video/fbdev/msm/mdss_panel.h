@@ -26,6 +26,13 @@ struct panel_id {
 	u16 type;
 };
 
+//ASUS_BSP: +++
+struct panel_list {
+	char name[16];
+	uint32_t lcd_id;
+};
+//ASUS_BSP: ---
+
 #define DEFAULT_FRAME_RATE	60
 #define DEFAULT_ROTATOR_FRAME_RATE 120
 #define ROTATOR_LOW_FRAME_RATE 30

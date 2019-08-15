@@ -134,16 +134,29 @@ enum {
 static bool blk_kick_flush(struct request_queue *q,
 			   struct blk_flush_queue *fq);
 
+#ifdef BLOCK_WRITE_CACHE
+static unsigned int blk_flush_policy(unsigned long fflags, struct request *rq)
+#else
 static unsigned int blk_flush_policy(unsigned int fflags, struct request *rq)
+#endif
 {
 	unsigned int policy = 0;
 
 	if (blk_rq_sectors(rq))
 		policy |= REQ_FSEQ_DATA;
 
+#ifdef BLOCK_WRITE_CACHE
+	if (fflags & (1UL << QUEUE_FLAG_WC)) {
+#else
 	if (fflags & REQ_FLUSH) {
+#endif
 		if (rq->cmd_flags & REQ_FLUSH)
 			policy |= REQ_FSEQ_PREFLUSH;
+
+#ifdef BLOCK_WRITE_CACHE
+		if (!(fflags & (1UL << QUEUE_FLAG_FUA)) &&
+		    (rq->cmd_flags & REQ_FUA))
+#else
 		/*
 		 * Use post flush when:
 		 * 1. If FUA is desired but not supported,
@@ -156,6 +169,7 @@ static unsigned int blk_flush_policy(unsigned int fflags, struct request *rq)
 				REQ_POST_FLUSH_BARRIER)) ||
 			((!(fflags & REQ_BARRIER) && !(fflags & REQ_FUA) &&
 				(rq->cmd_flags & REQ_POST_FLUSH_BARRIER))))
+#endif
 			policy |= REQ_FSEQ_POSTFLUSH;
 		/*
 		 * If post barrier is desired and not supported but FUA is
@@ -448,7 +462,11 @@ static void mq_flush_data_end_io(struct request *rq, int error)
 void blk_insert_flush(struct request *rq)
 {
 	struct request_queue *q = rq->q;
+#ifdef BLOCK_WRITE_CACHE
+	unsigned long fflags = q->queue_flags;	/* may change, cache */
+#else
 	unsigned int fflags = q->flush_flags;	/* may change, cache */
+#endif
 	unsigned int policy = blk_flush_policy(fflags, rq);
 	struct blk_flush_queue *fq = blk_get_flush_queue(q, rq->mq_ctx);
 
@@ -459,7 +477,11 @@ void blk_insert_flush(struct request *rq)
 	 * REQ_FLUSH and FUA for the driver.
 	 */
 	rq->cmd_flags &= ~REQ_FLUSH;
+#ifdef BLOCK_WRITE_CACHE
+	if (!(fflags & (1UL << QUEUE_FLAG_FUA)))
+#else
 	if (!(fflags & REQ_FUA))
+#endif
 		rq->cmd_flags &= ~REQ_FUA;
 
 	/*

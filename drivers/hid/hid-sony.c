@@ -60,8 +60,10 @@
 #define SONY_LED_SUPPORT (SIXAXIS_CONTROLLER | BUZZ_CONTROLLER |\
 				DUALSHOCK4_CONTROLLER | MOTION_CONTROLLER |\
 				NAVIGATION_CONTROLLER)
-#define SONY_BATTERY_SUPPORT (SIXAXIS_CONTROLLER | DUALSHOCK4_CONTROLLER |\
-				MOTION_CONTROLLER_BT | NAVIGATION_CONTROLLER)
+/* Disable SONY_BATTERY_SUPPORT support */
+/* #define SONY_BATTERY_SUPPORT (SIXAXIS_CONTROLLER | DUALSHOCK4_CONTROLLER |\
+				MOTION_CONTROLLER_BT | NAVIGATION_CONTROLLER)*/
+#define SONY_BATTERY_SUPPORT 0
 #define SONY_FF_SUPPORT (SIXAXIS_CONTROLLER | DUALSHOCK4_CONTROLLER |\
 				MOTION_CONTROLLER)
 
@@ -1364,7 +1366,7 @@ static int sony_input_configured(struct hid_device *hdev,
 					struct hid_input *hidinput)
 {
 	struct sony_sc *sc = hid_get_drvdata(hdev);
-	int ret;
+	int ret = 0;
 
 	/*
 	 * The Dualshock 4 touchpad supports 2 touches and has a

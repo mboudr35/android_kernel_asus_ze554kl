@@ -35,6 +35,7 @@
 #define SENTINEL_BYTE_3 0xFF
 
 #define RTB_COMPAT_STR	"qcom,msm-rtb"
+extern int g_saving_rtb_log;
 
 /* Write
  * 1) 3 bytes sentinel
@@ -47,6 +48,7 @@
  *
  * Total = 40 bytes.
  */
+/*
 struct msm_rtb_layout {
 	unsigned char sentinel[3];
 	unsigned char log_type;
@@ -68,16 +70,16 @@ struct msm_rtb_state {
 	uint32_t filter;
 	int step_size;
 };
-
+*/
 #if defined(CONFIG_QCOM_RTB_SEPARATE_CPUS)
 DEFINE_PER_CPU(atomic_t, msm_rtb_idx_cpu);
 #else
 static atomic_t msm_rtb_idx;
 #endif
 
-static struct msm_rtb_state msm_rtb = {
+struct msm_rtb_state msm_rtb = {
 	.filter = 1 << LOGK_LOGBUF,
-	.enabled = 1,
+	.enabled = 0,
 };
 
 module_param_named(filter, msm_rtb.filter, uint, 0644);
@@ -97,7 +99,7 @@ static struct notifier_block msm_rtb_panic_blk = {
 
 int notrace msm_rtb_event_should_log(enum logk_event_type log_type)
 {
-	return msm_rtb.initialized && msm_rtb.enabled &&
+	return msm_rtb.initialized && msm_rtb.enabled && !g_saving_rtb_log &&
 		((1 << (log_type & ~LOGTYPE_NOPC)) & msm_rtb.filter);
 }
 EXPORT_SYMBOL(msm_rtb_event_should_log);
@@ -282,19 +284,24 @@ static int msm_rtb_probe(struct platform_device *pdev)
 	if (msm_rtb.size <= 0 || msm_rtb.size > SZ_1M)
 		return -EINVAL;
 
-	msm_rtb.rtb = dma_alloc_coherent(&pdev->dev, msm_rtb.size,
-						&msm_rtb.phys,
-						GFP_KERNEL);
+	msm_rtb.phys = RTB_BUFFER_PA;
 
-	if (!msm_rtb.rtb)
+	if (!msm_rtb.phys)
 		return -ENOMEM;
+
+	msm_rtb.rtb = ioremap(msm_rtb.phys, msm_rtb.size);
+	if (!msm_rtb.rtb) {
+		return -ENOMEM;
+	}
 
 	msm_rtb.nentries = msm_rtb.size / sizeof(struct msm_rtb_layout);
 
 	/* Round this down to a power of 2 */
 	msm_rtb.nentries = __rounddown_pow_of_two(msm_rtb.nentries);
 
-	memset(msm_rtb.rtb, 0, msm_rtb.size);
+	// don't set the content to 0
+	// we need the last rtb log before reset
+	//~ memset(msm_rtb.rtb, 0, msm_rtb.size);
 
 	strlcpy(md_entry.name, "KRTB_BUF", sizeof(md_entry.name));
 	md_entry.virt_addr = (uintptr_t)msm_rtb.rtb;

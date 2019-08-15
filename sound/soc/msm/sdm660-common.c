@@ -9,7 +9,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+#define DEBUG 1
 #include <linux/input.h>
 #include <linux/of_gpio.h>
 #include <linux/mfd/msm-cdc-pinctrl.h>
@@ -21,6 +21,9 @@
 #include "sdm660-external.h"
 #include "../codecs/sdm660_cdc/msm-analog-cdc.h"
 #include "../codecs/wsa881x.h"
+
+/* ASUS_BSP : For SPK/RCV always mute due to clock disable failed during ADSP restart issue QTI_CASE_03337599 */
+#include <sound/q6core.h>
 
 #define DRV_NAME "sdm660-asoc-snd"
 
@@ -41,6 +44,7 @@ enum {
 	EXT_DISP_RX_IDX_MAX,
 };
 
+#if 0
 /* TDM default config */
 static struct dev_config tdm_rx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 	{ /* PRI TDM */
@@ -128,6 +132,7 @@ static struct dev_config tdm_tx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* TX_7 */
 	}
 };
+#endif
 
 /* Default configuration of external display BE */
 static struct dev_config ext_disp_rx_cfg[] = {
@@ -262,12 +267,14 @@ static char const *bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE",
 					  "S32_LE"};
 static char const *mi2s_format_text[] = {"S16_LE", "S24_LE", "S24_3LE",
 					  "S32_LE"};
+#if 0
 static char const *tdm_ch_text[] = {"One", "Two", "Three", "Four",
 				    "Five", "Six", "Seven", "Eight"};
 static char const *tdm_bit_format_text[] = {"S16_LE", "S24_LE", "S32_LE"};
 static char const *tdm_sample_rate_text[] = {"KHZ_8", "KHZ_16", "KHZ_32",
 					     "KHZ_44P1", "KHZ_48", "KHZ_96",
 					     "KHZ_192", "KHZ_352P8", "KHZ_384"};
+#endif
 static const char *const usb_ch_text[] = {"One", "Two", "Three", "Four",
 					   "Five", "Six", "Seven",
 					   "Eight"};
@@ -322,12 +329,14 @@ static SOC_ENUM_SINGLE_EXT_DECL(usb_rx_sample_rate, usb_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(usb_tx_sample_rate, usb_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(ext_disp_rx_sample_rate,
 				ext_disp_sample_rate_text);
+#if 0
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_tx_chs, tdm_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_tx_format, tdm_bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_tx_sample_rate, tdm_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_chs, tdm_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_format, tdm_bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(tdm_rx_sample_rate, tdm_sample_rate_text);
+#endif
 
 static struct afe_clk_set mi2s_clk[MI2S_MAX] = {
 	{
@@ -421,6 +430,7 @@ static int proxy_rx_ch_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+#if 0
 static int tdm_get_sample_rate(int value)
 {
 	int sample_rate = 0;
@@ -692,6 +702,7 @@ static int tdm_get_format_val(int format)
 	}
 	return value;
 }
+#endif
 
 static int mi2s_get_format(int value)
 {
@@ -741,6 +752,7 @@ static int mi2s_get_format_value(int format)
 	return value;
 }
 
+#if 0
 static int tdm_rx_format_get(struct snd_kcontrol *kcontrol,
 			     struct snd_ctl_elem_value *ucontrol)
 {
@@ -901,6 +913,7 @@ static int tdm_tx_ch_put(struct snd_kcontrol *kcontrol,
 	}
 	return ret;
 }
+#endif
 
 static int aux_pcm_get_sample_rate(int value)
 {
@@ -1928,6 +1941,7 @@ const struct snd_kcontrol_new msm_common_snd_controls[] = {
 	SOC_ENUM_EXT("Display Port RX SampleRate", ext_disp_rx_sample_rate,
 			ext_disp_rx_sample_rate_get,
 			ext_disp_rx_sample_rate_put),
+#if 0
 	SOC_ENUM_EXT("PRI_TDM_RX_0 SampleRate", tdm_rx_sample_rate,
 			tdm_rx_sample_rate_get,
 			tdm_rx_sample_rate_put),
@@ -2000,6 +2014,7 @@ const struct snd_kcontrol_new msm_common_snd_controls[] = {
 	SOC_ENUM_EXT("QUAT_TDM_TX_0 Channels", tdm_tx_chs,
 			tdm_tx_ch_get,
 			tdm_tx_ch_put),
+#endif
 };
 
 /**
@@ -2112,6 +2127,7 @@ int msm_common_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 		rate->min = rate->max = SAMPLING_RATE_48KHZ;
 		break;
 
+#if 0
 	case MSM_BACKEND_DAI_PRI_TDM_RX_0:
 		channels->min = channels->max =
 				tdm_rx_cfg[TDM_PRI][TDM_0].channels;
@@ -2175,6 +2191,7 @@ int msm_common_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				   tdm_tx_cfg[TDM_QUAT][TDM_0].bit_format);
 		rate->min = rate->max = tdm_tx_cfg[TDM_QUAT][TDM_0].sample_rate;
 		break;
+#endif
 
 	case MSM_BACKEND_DAI_AUXPCM_RX:
 		rate->min = rate->max =
@@ -2464,7 +2481,10 @@ int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	int port_id = msm_get_port_id(rtd->dai_link->be_id);
 	int index = cpu_dai->id;
 	unsigned int fmt = SND_SOC_DAIFMT_CBS_CFS;
-
+// Jessy +++
+	struct msm_asoc_mach_data *pdata =
+				snd_soc_card_get_drvdata(rtd->card);
+// Jessy ---
 	dev_dbg(rtd->card->dev,
 		"%s: substream = %s  stream = %d, dai name %s, dai ID %d\n",
 		__func__, substream->name, substream->stream,
@@ -2515,6 +2535,13 @@ int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 				goto clk_off;
 			}
 		}
+// Jessy +++
+		if (index == TERT_MI2S)
+		{
+			msm_cdc_pinctrl_select_active_state(pdata->tert_mi2s_gpio_p);
+			printk("msm_cdc_pinctrl_select_active_state(pdata->tert_mi2s_gpio_p \n");
+		}
+// Jessy ---
 	}
 	mutex_unlock(&mi2s_intf_conf[index].lock);
 	return 0;
@@ -2541,7 +2568,10 @@ void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	int port_id = msm_get_port_id(rtd->dai_link->be_id);
 	int index = rtd->cpu_dai->id;
-
+// Jessy +++
+	struct msm_asoc_mach_data *pdata =
+				snd_soc_card_get_drvdata(rtd->card);
+// Jessy ---
 	pr_debug("%s(): substream = %s  stream = %d\n", __func__,
 		 substream->name, substream->stream);
 	if (index < PRIM_MI2S || index > QUAT_MI2S) {
@@ -2551,11 +2581,21 @@ void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 
 	mutex_lock(&mi2s_intf_conf[index].lock);
 	if (--mi2s_intf_conf[index].ref_cnt == 0) {
+// Jessy +++
+		if (index == TERT_MI2S)
+		{
+			msm_cdc_pinctrl_select_sleep_state(pdata->tert_mi2s_gpio_p);
+			printk("msm_cdc_pinctrl_select_sleep_state(pdata->tert_mi2s_gpio_p \n");
+		}
+// Jessy ---
 		ret = msm_mi2s_set_sclk(substream, false);
 		if (ret < 0) {
 			pr_err("%s:clock disable failed for MI2S (%d); ret=%d\n",
 				__func__, index, ret);
-			mi2s_intf_conf[index].ref_cnt++;
+/* ASUS_BSP : For SPK/RCV always mute due to clock disable failed during ADSP restart issue QTI_CASE_03337599 */
+			if (q6core_is_adsp_ready())
+				mi2s_intf_conf[index].ref_cnt++;
+/* ASUS_BSP --- */
 		}
 		if (mi2s_intf_conf[index].msm_is_ext_mclk) {
 			mi2s_mclk[index].enable = 0;
@@ -3086,6 +3126,10 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 					"qcom,cdc-dmic-gpios", 0);
 		pdata->ext_spk_gpio_p = of_parse_phandle(pdev->dev.of_node,
 					"qcom,cdc-ext-spk-gpios", 0);
+// Jessy +++
+		pdata->tert_mi2s_gpio_p = of_parse_phandle(pdev->dev.of_node,
+					"qcom,tert-mi2s-gpios", 0);
+// Jessy ---
 	}
 
 	/*

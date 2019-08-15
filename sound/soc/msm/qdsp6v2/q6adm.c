@@ -47,6 +47,7 @@
 #undef DS2_ADM_COPP_TOPOLOGY_ID
 #define DS2_ADM_COPP_TOPOLOGY_ID 0xFFFFFFFF
 #endif
+extern int audio_24bit;//Rice
 
 struct adm_copp {
 
@@ -1994,11 +1995,13 @@ static struct cal_block_data *adm_find_cal_by_path(int cal_index, int path)
 
 		if (cal_index == ADM_AUDPROC_CAL) {
 			audproc_cal_info = cal_block->cal_info;
-			if (audproc_cal_info->path == path)
+			if ((audproc_cal_info->path == path) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		} else if (cal_index == ADM_AUDVOL_CAL) {
 			audvol_cal_info = cal_block->cal_info;
-			if (audvol_cal_info->path == path)
+			if ((audvol_cal_info->path == path) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		}
 	}
@@ -2025,12 +2028,14 @@ static struct cal_block_data *adm_find_cal_by_app_type(int cal_index, int path,
 		if (cal_index == ADM_AUDPROC_CAL) {
 			audproc_cal_info = cal_block->cal_info;
 			if ((audproc_cal_info->path == path) &&
-			    (audproc_cal_info->app_type == app_type))
+			    (audproc_cal_info->app_type == app_type) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		} else if (cal_index == ADM_AUDVOL_CAL) {
 			audvol_cal_info = cal_block->cal_info;
 			if ((audvol_cal_info->path == path) &&
-			    (audvol_cal_info->app_type == app_type))
+			    (audvol_cal_info->app_type == app_type) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		}
 	}
@@ -2061,13 +2066,15 @@ static struct cal_block_data *adm_find_cal(int cal_index, int path,
 			if ((audproc_cal_info->path == path) &&
 			    (audproc_cal_info->app_type == app_type) &&
 			    (audproc_cal_info->acdb_id == acdb_id) &&
-			    (audproc_cal_info->sample_rate == sample_rate))
+			    (audproc_cal_info->sample_rate == sample_rate) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		} else if (cal_index == ADM_AUDVOL_CAL) {
 			audvol_cal_info = cal_block->cal_info;
 			if ((audvol_cal_info->path == path) &&
 			    (audvol_cal_info->app_type == app_type) &&
-			    (audvol_cal_info->acdb_id == acdb_id))
+			    (audvol_cal_info->acdb_id == acdb_id) &&
+			    (cal_block->cal_data.size > 0))
 				return cal_block;
 		}
 	}
@@ -2367,11 +2374,18 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	int port_idx, flags;
 	int copp_idx = -1;
 	int tmp_port = q6audio_get_port_id(port_id);
+	
+	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d, bit_width %d\n",
+	       __func__, port_id, path, rate, channel_mode, perf_mode,
+	       topology,bit_width);
 
-	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
-		 __func__, port_id, path, rate, channel_mode, perf_mode,
-		 topology);
-
+	if ( audio_24bit && ((topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_SPK && channel_mode == 2) ||
+		(topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_HP && channel_mode == 2))) {
+		bit_width = 24;
+		pr_debug("%s: Force open adm in 24-bit for topology 0x%x\n",
+			__func__, topology);
+	}
+	
 	port_id = q6audio_convert_virtual_to_portid(port_id);
 	port_idx = adm_validate_and_get_port_index(port_id);
 	if (port_idx < 0) {

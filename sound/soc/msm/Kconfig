@@ -114,11 +114,7 @@ config SND_SOC_INT_CODEC
 	select SND_SOC_SDM660_CDC
 	select SND_SOC_MSM_HDMI_CODEC_RX
 	select QTI_PP
-	select DTS_SRS_TM
-	select DOLBY_LICENSE
 	select SND_HWDEP
-	select MSM_ULTRASOUND
-	select DTS_EAGLE
 	select SND_SOC_SDM660_COMMON
 	select SND_SOC_COMPRESS
 	select PINCTRL_LPI
@@ -147,13 +143,9 @@ config SND_SOC_EXT_CODEC
 	select SND_SOC_MSM_HDMI_CODEC_RX
 	select MFD_CORE
 	select QTI_PP
-	select DTS_SRS_TM
-	select DOLBY_LICENSE
 	select SND_SOC_CPE
 	select SND_SOC_WCD_CPE
 	select SND_HWDEP
-	select MSM_ULTRASOUND
-	select DTS_EAGLE
 	select SND_SOC_SDM660_COMMON
 	select SND_SOC_COMPRESS
 	select PINCTRL_LPI

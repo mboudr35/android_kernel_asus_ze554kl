@@ -212,4 +212,20 @@ source "drivers/bif/Kconfig"
 
 source "drivers/sensors/Kconfig"
 
+config TEXURA_USERDEBUG
+	bool "Texura userdebug module for ASUS"
+	depends on NLS_UTF8
+	default n
+	help
+	  Say Y here if you want support Texura userdebug module at ZE500KL
+	  Say N here if you want support Texura user module at ZE500KL
+
+config TEXURA_ARM64
+	bool "Texura userdebug module for QCOM ARM64"
+	depends on NLS_UTF8
+	default n
+	help
+	  Say Y here if you want support Texura userdebug module at QCOM ARM64
+	  Say N here if you want support Texura user module at ACOM ARM32
+
 endmenu

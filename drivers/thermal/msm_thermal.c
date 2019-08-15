@@ -188,6 +188,9 @@ static bool ocr_nodes_called;
 static bool ocr_probed;
 static bool ocr_reg_init_defer;
 static bool hotplug_enabled;
+/* ASUS_BSP (ShowCai) +++ */
+static bool interrupt_mode_enable;
+/* ASUS_BSP (ShowCai) --- */
 static bool msm_thermal_probed;
 static bool gfx_crit_phase_ctrl_enabled;
 static bool gfx_warm_phase_ctrl_enabled;
@@ -516,6 +519,48 @@ static ssize_t thermal_config_debugfs_write(struct file *file,
 
 #define CXIP_LM_CLIENTS_STATUS()                                        \
 	readl_relaxed(cxip_lm_reg_base + CXIP_LM_VOTE_STATUS)
+
+/* ASUS_BSP (ShowCai) +++ reduce thermal log */
+#define NUM_OF_CPU 8
+#define LOG_SAMPLE_RATE 20
+
+static DEFINE_MUTEX(log_mutex);
+static uint32_t cpu_error;
+static uint8_t cpu_log_count[NUM_OF_CPU];
+			
+static int limit_cpu_error_log(int cpu){
+	if(cpu_error&BIT(cpu)){
+		if(cpu_log_count[cpu] >= LOG_SAMPLE_RATE+1){
+			mutex_lock(&log_mutex);
+			cpu_log_count[cpu] = 1;
+			mutex_unlock(&log_mutex);
+			return false;
+		}
+		else{
+			mutex_lock(&log_mutex);
+			cpu_log_count[cpu]++;
+			mutex_unlock(&log_mutex);
+			return true;
+		}
+	}else{
+		/* First print */
+		mutex_lock(&log_mutex);
+		cpu_error |= BIT(cpu);
+		cpu_log_count[cpu] = 1;
+		mutex_unlock(&log_mutex);
+		return false;
+	}
+}
+
+static void unlimit_cpu_error_log(int cpu){
+	if(cpu_error&BIT(cpu)){
+		mutex_lock(&log_mutex);
+		cpu_error &= ~(BIT(cpu));
+		cpu_log_count[cpu] = 0;
+		mutex_unlock(&log_mutex);
+	}
+}
+/* ASUS_BSP (ShowCai) --- reduce thermal log */
 
 static void uio_init(struct platform_device *pdev)
 {
@@ -996,8 +1041,10 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	switch (event) {
 	case CPUFREQ_ADJUST:
-		max_freq_req = (lmh_dcvs_is_supported) ? UINT_MAX :
-			cpus[policy->cpu].parent_ptr->limited_max_freq;
+		/* ASUS_BSP (ShowCai) +++ nodify LMH and CPU driver in same time */
+		//max_freq_req = (lmh_dcvs_available) ? UINT_MAX :
+		max_freq_req = cpus[policy->cpu].parent_ptr->limited_max_freq;
+		/* ASUS_BSP (ShowCai) --- nodify LMH and CPU driver in same time */
 		min_freq_req = cpus[policy->cpu].parent_ptr->limited_min_freq;
 		pr_debug("mitigating CPU%d to freq max: %u min: %u\n",
 			policy->cpu, max_freq_req, min_freq_req);
@@ -1123,7 +1170,9 @@ static void update_cpu_freq(int cpu, enum freq_limits changed)
 		 */
 		if (lmh_dcvs_available) {
 			msm_lmh_dcvs_update(cpu);
-			if (changed & FREQ_LIMIT_MIN)
+			/* ASUS_BSP (ShowCai) +++ nodify LMH and CPU driver in same time */
+			if (changed/* & FREQ_LIMIT_MIN*/)
+			/* ASUS_BSP (ShowCai) --- nodify LMH and CPU driver in same time */
 				cpufreq_update_policy(cpu);
 		} else {
 			cpufreq_update_policy(cpu);
@@ -1738,7 +1787,7 @@ static int msm_thermal_lmh_dcvs_init(struct platform_device *pdev)
 	if (ret)
 		pr_err("Unable enable CRNT algo for cluster1\n");
 
-	lmh_dcvs_available = true;
+	lmh_dcvs_available = false;
 
 	return ret;
 }
@@ -3142,13 +3191,23 @@ static int __ref update_offline_cores(int val)
 			} else if (ret) {
 				cpus_offlined |= BIT(cpu);
 				pend_hotplug_req = true;
-				pr_err_ratelimited(
-					"Unable to online CPU%d. err:%d\n",
-					cpu, ret);
+				/* ASUS_BSP (ShowCai) +++ reduce thermal log */
+				if(limit_cpu_error_log(cpu)){
+					pr_err_ratelimited(
+						"Unable to online CPU%d. err:%d\n",
+						cpu, ret);
+				}
+				/* ASUS_BSP (ShowCai) --- reduce thermal log */
 			} else {
 				pr_debug("Onlined CPU%d\n", cpu);
 				trace_thermal_post_core_online(cpu,
 					cpumask_test_cpu(cpu, cpu_online_mask));
+				/* ASUS_BSP (ShowCai) +++ reduce thermal log */
+				if(cpu_error&BIT(cpu)){
+					unlimit_cpu_error_log(cpu);
+					printk("Onlined CPU%d\n", cpu);
+				}
+				/* ASUS_BSP (ShowCai) --- reduce thermal log */
 			}
 			unlock_device_hotplug();
 		}
@@ -4919,8 +4978,12 @@ static void __ref disable_msm_thermal(void)
 
 static void interrupt_mode_init(void)
 {
-	if (!msm_thermal_probed)
+	/* ASUS_BSP (ShowCai) +++ */
+	if (!msm_thermal_probed) {
+		interrupt_mode_enable = true;
 		return;
+	}
+	/* ASUS_BSP (ShowCai) --- */
 
 	if (polling_enabled) {
 		polling_enabled = 0;
@@ -7434,6 +7497,13 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 	if (ret)
 		goto probe_exit;
 	msm_thermal_probed = true;
+	
+	/* ASUS_BSP (ShowCai) +++ */
+	if (interrupt_mode_enable) {
+		interrupt_mode_init();
+		interrupt_mode_enable = false;
+	}
+	/* ASUS_BSP (ShowCai) --- */
 
 probe_exit:
 	return ret;
@@ -7570,6 +7640,7 @@ int __init msm_thermal_late_init(void)
 		}
 	}
 	msm_thermal_add_mx_nodes();
+	interrupt_mode_init();
 	create_cpu_topology_sysfs();
 	create_thermal_debugfs();
 	msm_thermal_add_bucket_info_nodes();

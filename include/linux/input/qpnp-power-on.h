@@ -58,6 +58,12 @@ enum pon_restart_reason {
 	PON_RESTART_REASON_DMVERITY_CORRUPTED	= 0x04,
 	PON_RESTART_REASON_DMVERITY_ENFORCE	= 0x05,
 	PON_RESTART_REASON_KEYS_CLEAR		= 0x06,
+	// +++ ASUS_BSP : add for ASUS reboot cmd : It must  sync abl : edk2\qcommodulepkg\include\library\ShutdownServices.h
+	PON_RESTART_REASON_ADB_ENABLE		= 0x07,
+	PON_RESTART_REASON_SHUTDOWN		= 0x08,
+	PON_RESTART_REASON_SHIPMODE		= 0x09,
+	PON_RESTART_REASON_UNLOCK			= 0x0a,
+	// +++ ASUS_BSP : add for ASUS reboot cmd	
 };
 
 #ifdef CONFIG_INPUT_QPNP_POWER_ON

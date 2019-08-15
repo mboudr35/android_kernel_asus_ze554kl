@@ -193,4 +193,12 @@ void vcs_remove_sysfs(int index);
 extern bool vgacon_text_force(void);
 #endif
 
+//ASUS_BSP +++ [PM]Extern values for GPIO, IRQ, SPMI wakeup information for printk.c to Evtlog
+extern int gpio_irq_cnt, gpio_resume_irq[8], gic_irq_cnt, gic_resume_irq[8];
+//ASUS_BSP --- [PM]Extern values for GPIO, IRQ, SPMI wakeup information for printk.c to Evtlog
+
+//ASUS_BSP +++ [PM]Extern this flag to check dpm_suspend has been callback for resume_console
+extern unsigned int pm_pwrcs_ret;
+//ASUS_BSP --- [PM]Extern this flag to check dpm_suspend has been callback for resume_console
+
 #endif /* _LINUX_CONSOLE_H */

@@ -89,6 +89,7 @@ static int msm_vidc_table_get_target_freq(struct devfreq *dev,
 	struct msm_vidc_bus_table_gov *gov = NULL;
 	enum bus_profile profile = 0;
 	int i = 0;
+	int freq_result = 0;
 
 	if (!dev || !frequency || !flag) {
 		dprintk(VIDC_ERR, "%s: Invalid params %pK, %pK, %pK\n",
@@ -127,13 +128,18 @@ static int msm_vidc_table_get_target_freq(struct devfreq *dev,
 			profile = VIDC_BUS_PROFILE_UBWC_10_BIT;
 
 		freq = __get_bus_freq(gov, data, profile);
+		if (!freq){
+			freq_result++;
+		}
 		/*
 		 * chose frequency from normal profile
 		 * if specific profile frequency was not found.
 		 */
 		if (!freq) {
-			dprintk(VIDC_WARN,
-				"appropriate bus table not found, voting with Normal Profile\n");
+		    if (freq_result%10 == 0) {
+			    dprintk(VIDC_WARN,
+				    "appropriate bus table not found, voting with Normal Profile\n");
+			}
 			freq = __get_bus_freq(gov, data,
 				VIDC_BUS_PROFILE_NORMAL);
 		}

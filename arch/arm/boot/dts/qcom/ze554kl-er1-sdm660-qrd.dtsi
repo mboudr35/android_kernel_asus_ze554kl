@@ -1,0 +1,452 @@
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "ze554kl-er1-sdm660-pinctrl.dtsi"
+#include "ze554kl-er1-sdm660-camera-sensor-qrd.dtsi"
+#include "sdm660-internal-codec.dtsi"
+/ {
+};
+
+&blsp2_uart1_hs {
+	status = "ok";
+};
+
+&uartblsp1dm1 {
+	status = "ok";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart_console_active>;
+};
+
+&sdhc_1 {
+	/* device core power supply */
+	vdd-supply = <&pm660l_l4>;
+	qcom,vdd-voltage-level = <2950000 2950000>;
+	qcom,vdd-current-level = <200 570000>;
+	/* ASUS_BPS Deeo: make sure vdd power always on*/
+	qcom,vdd-always-on;
+
+	/* device communication power supply */
+	vdd-io-supply = <&pm660_l8>;
+	qcom,vdd-io-always-on;
+	qcom,vdd-io-lpm-sup;
+	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	qcom,vdd-io-current-level = <200 325000>;
+
+	pinctrl-names = "active", "sleep";
+	pinctrl-0 = <&sdc1_clk_on &sdc1_cmd_on &sdc1_data_on &sdc1_rclk_on>;
+	pinctrl-1 = <&sdc1_clk_off &sdc1_cmd_off &sdc1_data_off &sdc1_rclk_off>;
+
+	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000 192000000
+								384000000>;
+
+	qcom,nonremovable;
+	qcom,bus-speed-mode = "HS400_1p8v", "HS200_1p8v", "DDR_1p8v";
+
+	status = "ok";
+};
+
+&sdc2_cd_on {
+	config {
+		/delete-property/ bias-pull-up;
+		bias-disable;
+	};
+};
+
+&sdhc_2 {
+	/* device core power supply */
+	vdd-supply = <&pm660l_l5>;
+	qcom,vdd-voltage-level = <2950000 2950000>;
+	qcom,vdd-current-level = <15000 800000>;
+
+	/* device communication power supply */
+	vdd-io-supply = <&pm660l_l2>;
+	qcom,vdd-io-voltage-level = <1800000 2950000>;
+	qcom,vdd-io-current-level = <200 22000>;
+
+	pinctrl-names = "active", "sleep";
+	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
+	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
+
+	#address-cells = <0>;
+	interrupt-parent = <&sdhc_2>;
+	interrupts = <0 1 2>;
+	#interrupt-cells = <1>;
+	interrupt-map-mask = <0xffffffff>;
+	interrupt-map = <0 &intc 0 0 125 0
+			1 &intc 0 0 221 0
+			2 &tlmm 54 0>;
+	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
+	cd-gpios = <&tlmm 54 0x1>;
+
+	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000
+								200000000>;
+	qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50", "SDR104";
+
+	status = "ok";
+};
+
+&ufsphy1 {
+	vdda-phy-supply = <&pm660l_l1>;
+	vdda-pll-supply = <&pm660_l10>;
+	vddp-ref-clk-supply = <&pm660_l1>;
+	vdda-phy-max-microamp = <51400>;
+	vdda-pll-max-microamp = <14200>;
+	vddp-ref-clk-max-microamp = <100>;
+	vddp-ref-clk-always-on;
+	status = "ok";
+};
+
+&ufs1 {
+	vdd-hba-supply = <&gdsc_ufs>;
+	vdd-hba-fixed-regulator;
+	vcc-supply = <&pm660l_l4>;
+	vccq2-supply = <&pm660_l8>;
+	vcc-max-microamp = <500000>;
+	vccq2-max-microamp = <600000>;
+	status = "ok";
+};
+
+&soc {
+	qcom,msm-ssc-sensors {
+		compatible = "qcom,msm-ssc-sensors";
+	};
+
+	// ASUS_BSP +++ Fingerprint sensor
+	goodixfp {
+		compatible = "asus,fingerprint";
+		asus-fp,sleep-gpio = <&tlmm 20 0x0>;
+		asus-fp,irq-gpio = <&tlmm 72 0x2008>;
+		asus-fp,vcc-enable-gpio = <&pm660l_gpios 5 0x0>;
+		asus-fp,ID1-gpio = <&tlmm 74 0x0>;
+
+		/* Pinctrl Setting */
+		qcom,use-pinctrl;
+		pinctrl-names = "fp_default", "fp_sleep";
+		pinctrl-0 = <&fp_int_active>;
+		pinctrl-1 = <&fp_int_suspend>;
+	};
+	// ASUS_BSP ---  Fingerprint sensor
+
+	// ASUS_BSP +++ ShawnHuang HALL sensor
+        hall_sensor {
+                compatible = "qcom,hall";
+                pinctrl-names = "hall_gpio_high","hall_gpio_low";
+                pinctrl-0 = <&gpio_hall_active>;
+                pinctrl-1 = <&gpio_hall_suspend>;
+                qcom,hall-gpio = <&tlmm 75 0x0>;
+        };
+        // ASUS_BSP --- ShawnHuang HALL sensor
+};
+
+&qusb_phy0 {
+	qcom,qusb-phy-init-seq = <0xf8 0x80
+				0x83 0x84
+				0x83 0x88
+				0xc3 0x8c
+				0x30 0x08
+				0x79 0x0c
+				0x21 0x10
+				0x14 0x9c
+				0x9f 0x1c
+				0x00 0x18>;
+};
+
+&pm660_gpios {
+	/* GPIO 4 (NFC_CLK_REQ) */
+	gpio@c300 {
+		qcom,mode = <0>;
+		qcom,vin-sel = <1>;
+		qcom,src-sel = <0>;
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+};
+
+&i2c_1 {	/* BLSP1 QUP0 for Sensors */
+	status = "okay";
+
+	/* ASUS_BSP: Vincent: rgb sensor i2c ++*/
+	qcom_cm3323e_i2c@10 {
+		compatible = "capella,cm3323e";
+		reg = <0x10>;
+		vinc-supply=<&pm660l_l6>;
+	};
+	/* ASUS_BSP: Vincent: rgb sensor i2c --*/
+
+	/* ASUS_BSP +++ ShawnHuang CM36656 */
+	cm36656_i2c@60 {
+		compatible = "qcom,cm36656";
+		reg = <0x60>;
+		pinctrl-names = "alsps_gpio_high","alsps_gpio_low";
+		pinctrl-0 = <&cm36656_default>;
+		pinctrl-1 = <&cm36656_sleep>;
+		qcom,alsps-gpio = <&tlmm 45 0x0>;
+	};
+	/* ASUS_BSP --- ShawnHuang CM36656 */
+};
+
+&i2c_6 { /* BLSP1 QUP6 (NFC) */
+	status = "okay";
+	nq@28 {
+		compatible = "qcom,nq-nci";
+		reg = <0x28>;
+		qcom,nq-irq = <&tlmm 28 0x00>;
+		qcom,nq-ven = <&tlmm 29 0x00>;
+		qcom,nq-firm = <&tlmm 30 0x00>;
+		qcom,nq-clkreq = <&pm660_gpios 4 0x00>;
+		qcom,nq-esepwr = <&tlmm 31 0x00>;
+		interrupt-parent = <&tlmm>;
+		qcom,clk-src = "BBCLK3";
+		interrupts = <28 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend>;
+		clocks = <&clock_rpmcc RPM_LN_BB_CLK3_PIN>;
+		clock-names = "ref_clk";
+	};
+};
+
+&i2c_4 {	/* BLSP1 QUP3 for Touch */
+	status = "okay";
+status = "okay";
+	focaltech@38 {
+		compatible = "focaltech,fts";
+		//compatible = "focaltech,ft3517";
+		reg = <0x38>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <67 0x2008>;
+		//vdd-supply = <&pm660l_l3>;
+		vcc_i2c-supply = <&pm660_l14>;
+		/* pins used by touchscreen */
+		/*pinctrl-names = "pmx_ts_active","pmx_ts_suspend","pmx_ts_release";
+		pinctrl-0 = <&ts_active>;
+		pinctrl-1 = <&ts_suspend>;
+		//pinctrl-2 = <&ts_release>;*/
+		focaltech,name = "ft8716";
+		//focaltech,family-id = <0x58>;
+		focaltech,reset-gpio = <&tlmm 66 0x0>;
+		focaltech,irq-gpio = <&tlmm 67 0x0>;
+		focaltech,display-coords = <0 0 1080 1920>;
+		//focaltech,panel-coords = <0 0 1080 1920>;
+		//focaltech,button-map= <139 102 158>;
+		focaltech,have-key;
+		focaltech,key-number = <3>;
+		focaltech,max-touch-number = <10>;
+		focaltech,keys = <158 102 139>;
+		focaltech,key-y-coord = <2000>;
+		focaltech,key-x-coord = <200 400 600>;
+	};
+	synaptics_dsx@20 {
+		compatible = "synaptics,dsx-i2c";
+		reg = <0x20>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <67 0x2008>;
+		vcc_i2c-supply = <&pm660_l14>;
+		//synaptics,pwr-reg-name = "vdd_ana";
+		synaptics,bus-reg-name = "vcc_i2c";
+		synaptics,irq-gpio = <&tlmm 67 0x2008>;
+		//synaptics,reset-gpio  = <&tlmm 66 0x0>;
+		synaptics,irq-on-state = <0>;
+		synaptics,irq-flags = <0x2008>; // IRQF_ONESHOT | IRQF_TRIGGER_LOW
+		synaptics,power-delay-ms = <200>;
+		synaptics,reset-delay-ms = <200>;
+		synaptics,reset-on-state = <0>;
+		synaptics,reset-active-ms = <20>;
+		synaptics,ub-i2c-addr = <0x2c>;
+		// uncomment and update line below as appropriate if there are 0D buttons
+		synaptics,cap-button-codes = <158 139 139>;
+		// uncomment and update lines below as appropriate if there are virtual buttons
+		// synaptics,vir-button-codes = <102 100 900 100 60 158 300 900 100 60>;
+		// synaptics,max-y-for-2d = <800>;
+	};
+};
+
+&i2c_7 {	/* BLSP2 QUP2 for Audio */
+	status = "okay";
+
+};
+
+&pm660l_gpios {
+	/* GPIO 7 for VOL_UP */
+	gpio@c600 {
+		status = "ok";
+		qcom,mode = <0>;
+		qcom,pull = <0>;
+		qcom,vin-sel = <0>;
+		qcom,src-sel = <0>;
+		qcom,out-strength = <1>;
+	};
+	
+	/* GPIO 5 for Fingerprint */
+	gpio@c400 {
+		reg = <0xc400 0x100>;
+		qcom,pin-num = <5>;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	pmx_ts_rst_active {
+		ts_rst_active: ts_rst_active {
+			mux {
+				pins = "gpio66";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio66";
+				drive-strength = <16>;
+				bias-pull-up;
+			};
+		};
+	};
+
+	pmx_ts_rst_suspend {
+		ts_rst_suspend: ts_rst_suspend {
+			mux {
+				pins = "gpio66";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio66";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+};
+
+&ssphy {
+	fpc-redrive-supply = <&pm660_l11>;
+	qcom,redrive-voltage-level = <0 1800000 1950000>;
+	qcom,redrive-load = <105000>;
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		input-name = "gpio-keys";
+		status = "ok";
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&tlmm 44 0x1>;
+			linux,input-type = <1>;
+			linux,code = <115>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&tlmm 43 0x1>;
+			linux,input-type = <1>;
+			linux,code = <114>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+/*
+		home {
+			label = "home";
+			gpios = <&pm660_gpios 11 0x1>;
+			linux,input-type = <1>;
+			linux,code = <102>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+*/
+	};
+};
+
+/ {
+	qrd_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+
+		#include "fg-gen3-batterydata-coslight-3150mah_4p35v.dtsi" //ASUS BSP : LiJen Battery
+	};
+};
+
+&pm660_fg {
+	qcom,battery-data = <&qrd_batterydata>;
+	qcom,fg-jeita-thresholds = <0 10 50 60>;
+	qcom,battery-thermal-coefficients = [9d 50 ff];
+	qcom,fg-cutoff-voltage = <3400>; //ASUS BSP : LiJen Battery
+	qcom,fg-empty-voltage = <2800>; //ASUS BSP : LiJen Battery
+	qcom,fg-cutoff-current = <100>; //ASUS BSP : LiJen fine tune msoc for low temperature 
+};
+
+&i2c_2 {
+	status = "ok";
+	smb1351_charger: smb1351-charger@1d {
+		compatible = "qcom,smb1351-charger";
+		reg = <0x1d>;
+		qcom,parallel-charger;
+		qcom,float-voltage-mv = <4400>;
+		qcom,recharge-mv = <100>;
+		qcom,parallel-en-pin-polarity = <1>;
+	};
+};
+
+/delete-node/ &tasha_hph_en0;
+/delete-node/ &tasha_hph_en1;
+
+&tasha_snd {
+	qcom,model = "sdm660-tasha-skus-snd-card";
+	qcom,audio-routing =
+		"AIF4 VI", "MCLK",
+		"RX_BIAS", "MCLK",
+		"MADINPUT", "MCLK",
+		"AMIC2", "MIC BIAS2",
+		"MIC BIAS2", "Headset Mic",
+		"DMIC0", "MIC BIAS1",
+		"MIC BIAS1", "Digital Mic0",
+		"DMIC3", "MIC BIAS3",
+		"MIC BIAS3", "Digital Mic3",
+		"DMIC5", "MIC BIAS3",
+		"MIC BIAS3", "Digital Mic5",
+		"SpkrLeft IN", "SPK1 OUT";
+	qcom,msm-mbhc-hphl-swh = <1>;
+	/delete-property/ qcom,us-euro-gpios;
+	/delete-property/ qcom,hph-en0-gpio;
+	/delete-property/ qcom,hph-en1-gpio;
+	qcom,wsa-max-devs = <1>;
+	qcom,wsa-devs = <&wsa881x_211>, <&wsa881x_213>;
+	qcom,wsa-aux-dev-prefix = "SpkrLeft", "SpkrLeft";
+};
+
+//ASUS BSP :  Charger +++
+&i2c_2 {	/* BLSP1 QUP1 for Power */
+	status = "okay";
+
+	us5587@38 {
+		compatible = "qcom,us5587";
+		reg = <0x38>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+};
+
+
+&pm660_charger {
+	pinctrl-0 = <&usb_switch_active &LID_en_active>;
+	pinctrl-1 = <&usb_switch_suspend &LID_en_sleep>;
+	ADC_SW_EN-gpios59 = <&tlmm 59 0x0>;
+	ADCPWREN_PMI_GP1-gpios34 = <&tlmm 34 0x0>;
+	USB_THERMAL_ALERT-gpios52 = <&tlmm 52 0x0>;
+	USB_LOW_IMPEDANCE-gpios77 = <&tlmm 77 0x0>;
+	USB_LID_EN-gpios71 = <&tlmm 71 0x0>;
+	USB_WATER_PROOF-gpios73 = <&tlmm 73 0x0>;
+};
+//ASUS BSP :  Charger ---
+

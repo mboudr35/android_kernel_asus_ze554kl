@@ -390,6 +390,21 @@ static int __check_block_validity(struct inode *inode, const char *func,
 	return 0;
 }
 
+int ext4_issue_zeroout(struct inode *inode, ext4_lblk_t lblk, ext4_fsblk_t pblk,
+		       ext4_lblk_t len)
+{
+	int ret;
+
+	if (ext4_encrypted_inode(inode))
+		return ext4_encrypted_zeroout(inode, lblk, pblk, len);
+
+	ret = sb_issue_zeroout(inode->i_sb, pblk, len, GFP_NOFS);
+	if (ret > 0)
+		ret = 0;
+
+	return ret;
+}
+
 #define check_block_validity(inode, map)	\
 	__check_block_validity((inode), __func__, __LINE__, (map))
 
@@ -633,13 +648,28 @@ found:
 		}
 
 		/*
-		 * If the extent has been zeroed out, we don't need to update
+		 * We have to zeroout blocks before inserting them into extent
+		 * status tree. Otherwise someone could look them up there and
+		 * use them before they are really zeroed.
+		 */
+		if (flags & EXT4_GET_BLOCKS_ZERO &&
+		    map->m_flags & EXT4_MAP_MAPPED &&
+		    map->m_flags & EXT4_MAP_NEW) {
+			ret = ext4_issue_zeroout(inode, map->m_lblk,
+						 map->m_pblk, map->m_len);
+			if (ret) {
+				retval = ret;
+				goto out_sem;
+			}
+		}
+
+		/* If the extent has been zeroed out, we don't need to update
 		 * extent status tree.
 		 */
 		if ((flags & EXT4_GET_BLOCKS_PRE_IO) &&
 		    ext4_es_lookup_extent(inode, map->m_lblk, &es)) {
 			if (ext4_es_is_written(&es))
-				goto has_zeroout;
+				goto out_sem;
 		}
 		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
 				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
@@ -650,11 +680,13 @@ found:
 			status |= EXTENT_STATUS_DELAYED;
 		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
 					    map->m_pblk, status);
-		if (ret < 0)
+		if (ret < 0){
 			retval = ret;
+			goto out_sem;
+		}
 	}
 
-has_zeroout:
+out_sem:
 	up_write((&EXT4_I(inode)->i_data_sem));
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		ret = check_block_validity(inode, map);
@@ -4043,7 +4075,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
 	int			inodes_per_block, inode_offset;
 
 	iloc->bh = NULL;
-	if (!ext4_valid_inum(sb, inode->i_ino))
+	if (inode->i_ino < EXT4_ROOT_INO ||
+	    inode->i_ino > le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count))
 		return -EFSCORRUPTED;
 
 	iloc->block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);

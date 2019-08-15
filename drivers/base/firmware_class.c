@@ -373,6 +373,13 @@ static int fw_get_filesystem_firmware(struct device *device,
 	int i, len;
 	int rc = -ENOENT;
 	char *path;
+	/* ASUS BSP : For Change ADSP FW loading path to system/vendor/firmware +++*/
+	char fw_name[5];
+	/* ASUS BSP ---*/
+	
+	/* ASUS BSP : For Change Venus FW loading path to system/vendor/firmware +++*/
+	char v_fw_name[6];
+	/* ASUS BSP ---*/
 
 	path = __getname();
 	if (!path)
@@ -392,6 +399,58 @@ static int fw_get_filesystem_firmware(struct device *device,
 			break;
 		}
 
+		/* ASUS BSP : For Change ADSP FW loading path to system/vendor/firmware */
+		snprintf(fw_name, 5, "%s", buf->fw_id);
+		if (!strcmp(fw_name, "adsp")  && i == 1 ) {
+			if (!strcmp(buf->fw_id, "adsp.mdt"))    {
+				if ( g_ASUS_prjID == 0x07 )
+					dev_err(device, "[ADSP] This project is : SDM630(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x05 )
+					dev_err(device, "[ADSP] This project is : SDM660(0x%x) \n", g_ASUS_prjID);
+				else
+					dev_err(device, "[ADSP] Unknown project(0x%x) \n", g_ASUS_prjID);
+			}
+			if ( g_ASUS_prjID == 0x07 )     {
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_Sdm630_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x05 )        {
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_Sdm660_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+			else    {
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/q6_Sdm630_image", buf->fw_id);
+				dev_err(device, "[ADSP] Try to load firmware : %s \n", path);
+			}
+		}
+		/* ASUS BSP ---*/
+
+		/* ASUS BSP : For Change Venus FW loading path to system/vendor/firmware */
+		snprintf(v_fw_name, 6, "%s", buf->fw_id);
+		if (!strcmp(v_fw_name, "venus")  && i == 1 ) {
+			if (!strcmp(buf->fw_id, "venus.mdt")) {
+				if ( g_ASUS_prjID == 0x07 )
+					dev_err(device, "[Codec] This project is : SDM630(0x%x) \n", g_ASUS_prjID);
+				else if ( g_ASUS_prjID == 0x05 )
+					dev_err(device, "[Codec] This project is : SDM660(0x%x) \n", g_ASUS_prjID);
+				else
+					dev_err(device, "[Codec] Unknown project(0x%x) \n", g_ASUS_prjID);
+			}
+			if ( g_ASUS_prjID == 0x07 )	{
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/sdm630", buf->fw_id);
+				dev_err(device, "[Codec] Try to load firmware : %s \n", path);
+			}
+			else if ( g_ASUS_prjID == 0x05 ) {
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/sdm660", buf->fw_id);
+				dev_err(device, "[Codec] Try to load firmware : %s \n", path);
+			}
+			else {
+				snprintf(path, PATH_MAX, "%s/%s", "/system/vendor/firmware/sdm630", buf->fw_id);
+				dev_err(device, "[Codec] Try to load firmware : %s \n", path);
+			}
+		}
+		/* ASUS BSP ---*/
+              
 		file = filp_open(path, O_RDONLY, 0);
 		if (IS_ERR(file))
 			continue;

@@ -3063,12 +3063,18 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev_ioctl,
 		return -EINVAL;
 
 	msm_isp_get_timestamp(&timestamp, vfe_dev_ioctl);
-
+	mutex_lock(&vfe_dev_ioctl->buf_mgr->lock);
 	for (i = 0; i < stream_cfg_cmd->num_streams; i++) {
 		if (stream_cfg_cmd->stream_handle[i] == 0)
 			continue;
 		stream_info = msm_isp_get_stream_common_data(vfe_dev_ioctl,
 			HANDLE_TO_IDX(stream_cfg_cmd->stream_handle[i]));
+
+		if (!stream_info) {
+			pr_err("%s: stream_info is NULL", __func__);
+			mutex_unlock(&vfe_dev_ioctl->buf_mgr->lock);
+			return -EINVAL;
+		}
 		if (SRC_TO_INTF(stream_info->stream_src) < VFE_SRC_MAX)
 			src_state = axi_data->src_info[
 				SRC_TO_INTF(stream_info->stream_src)].active;
@@ -3076,6 +3082,7 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev_ioctl,
 		else {
 			ISP_DBG("%s: invalid src info index\n", __func__);
 			rc = -EINVAL;
+			mutex_unlock(&vfe_dev_ioctl->buf_mgr->lock);
 			goto error;
 		}
 		spin_lock_irqsave(&stream_info->lock, flags);
@@ -3087,6 +3094,7 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev_ioctl,
 		}
 		if (rc) {
 			spin_unlock_irqrestore(&stream_info->lock, flags);
+			mutex_unlock(&vfe_dev_ioctl->buf_mgr->lock);
 			goto error;
 		}
 
@@ -3109,6 +3117,7 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev_ioctl,
 				HANDLE_TO_IDX(
 				stream_cfg_cmd->stream_handle[i]));
 			spin_unlock_irqrestore(&stream_info->lock, flags);
+			mutex_unlock(&vfe_dev_ioctl->buf_mgr->lock);
 			goto error;
 		}
 		for (k = 0; k < stream_info->num_isp; k++) {
@@ -3167,6 +3176,7 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev_ioctl,
 		spin_unlock_irqrestore(&stream_info->lock, flags);
 		streams[num_streams++] = stream_info;
 	}
+    mutex_unlock(&vfe_dev_ioctl->buf_mgr->lock);
 
 	for (i = 0; i < MAX_VFE; i++) {
 		vfe_dev = update_vfes[i];
@@ -3916,6 +3926,12 @@ int msm_isp_update_axi_stream(struct vfe_device *vfe_dev, void *arg)
 				&update_cmd->update_info[i];
 			stream_info = msm_isp_get_stream_common_data(vfe_dev,
 				HANDLE_TO_IDX(update_info->stream_handle));
+			if (stream_info == NULL) {
+				pr_err_ratelimited("%s: stream_info is NULL\n",
+					__func__);
+				rc = -EINVAL;
+				break;
+			}
 			rc = msm_isp_request_frame(vfe_dev, stream_info,
 				update_info->user_stream_id,
 				update_info->frame_id,

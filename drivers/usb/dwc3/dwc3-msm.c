@@ -2161,7 +2161,7 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 		mdwc->lpm_flags |= MDWC3_ASYNC_IRQ_WAKE_CAPABILITY;
 	}
 
-	dev_info(mdwc->dev, "DWC3 in low power mode\n");
+	dev_info(mdwc->dev, "[USB] DWC3 in low power mode\n");
 	mutex_unlock(&mdwc->suspend_resume_mutex);
 	return 0;
 }
@@ -2295,7 +2295,7 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 		mdwc->lpm_flags &= ~MDWC3_ASYNC_IRQ_WAKE_CAPABILITY;
 	}
 
-	dev_info(mdwc->dev, "DWC3 exited from low power mode\n");
+	dev_info(mdwc->dev, "[USB] DWC3 exited from low power mode\n");
 
 	/* Enable core irq */
 	if (dwc->irq)
@@ -2328,26 +2328,28 @@ static void dwc3_ext_event_notify(struct dwc3_msm *mdwc)
 	flush_delayed_work(&mdwc->sm_work);
 
 	if (mdwc->id_state == DWC3_ID_FLOAT) {
-		dev_dbg(mdwc->dev, "XCVR: ID set\n");
+		dev_info(mdwc->dev, "[USB] XCVR: ID set\n");
 		set_bit(ID, &mdwc->inputs);
+		mdwc->hs_phy->flags &= ~PHY_HOST_MODE;
 	} else {
-		dev_dbg(mdwc->dev, "XCVR: ID clear\n");
+		dev_info(mdwc->dev, "[USB] XCVR: ID clear\n");
 		clear_bit(ID, &mdwc->inputs);
+		mdwc->hs_phy->flags |= PHY_HOST_MODE;
 	}
 
 	if (mdwc->vbus_active && !mdwc->in_restart) {
-		dev_dbg(mdwc->dev, "XCVR: BSV set\n");
+		dev_info(mdwc->dev, "[USB] XCVR: BSV set\n");
 		set_bit(B_SESS_VLD, &mdwc->inputs);
 	} else {
-		dev_dbg(mdwc->dev, "XCVR: BSV clear\n");
+		dev_info(mdwc->dev, "[USB] XCVR: BSV clear\n");
 		clear_bit(B_SESS_VLD, &mdwc->inputs);
 	}
 
 	if (mdwc->suspend) {
-		dev_dbg(mdwc->dev, "XCVR: SUSP set\n");
+		dev_info(mdwc->dev, "[USB] XCVR: SUSP set\n");
 		set_bit(B_SUSPEND, &mdwc->inputs);
 	} else {
-		dev_dbg(mdwc->dev, "XCVR: SUSP clear\n");
+		dev_info(mdwc->dev, "[USB] XCVR: SUSP clear\n");
 		clear_bit(B_SUSPEND, &mdwc->inputs);
 	}
 
@@ -2636,6 +2638,12 @@ static int dwc3_msm_id_notifier(struct notifier_block *nb,
 	if (dwc->maximum_speed > dwc->max_hw_supp_speed)
 		dwc->maximum_speed = dwc->max_hw_supp_speed;
 
+	if (DWC3_ID_GROUND == id) {
+		dev_info(mdwc->dev, "[USB] ID Set (%ld, %d, %d, %d, %d)\n", event, id, mdwc->id_state, cc_state, speed);
+	} else {
+		dev_info(mdwc->dev, "[USB] ID Clear (%ld, %d, %d, %d, %d)\n", event, id, mdwc->id_state, cc_state, speed);
+	}
+
 	if (mdwc->id_state != id) {
 		mdwc->id_state = id;
 		dbg_event(0xFF, "id_state", mdwc->id_state);
@@ -2697,6 +2705,14 @@ static int dwc3_msm_vbus_notifier(struct notifier_block *nb,
 	dwc->maximum_speed = (speed <= 0) ? USB_SPEED_HIGH : USB_SPEED_SUPER;
 	if (dwc->maximum_speed > dwc->max_hw_supp_speed)
 		dwc->maximum_speed = dwc->max_hw_supp_speed;
+
+	if (event) {
+		dev_info(mdwc->dev, "[USB] VBus Set (%ld, %d, %d, %d, %d)\n", event, cc_state,
+									speed, dwc->is_drd, mdwc->in_restart);
+	} else {
+		dev_info(mdwc->dev, "[USB] VBus Clear (%ld, %d, %d, %d, %d)\n", event, cc_state,
+									speed, dwc->is_drd, mdwc->in_restart);
+	}
 
 	mdwc->vbus_active = event;
 	if (dwc->is_drd && !mdwc->in_restart) {
@@ -3427,8 +3443,10 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret = 0;
 
-	if (!dwc->xhci)
+	if (!dwc->xhci) {
+		mdwc->hs_phy->flags &= ~PHY_HOST_MODE;
 		return -EINVAL;
+	}
 
 	/*
 	 * The vbus_reg pointer could have multiple values
@@ -3443,12 +3461,13 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 				PTR_ERR(mdwc->vbus_reg) == -EPROBE_DEFER) {
 			/* regulators may not be ready, so retry again later */
 			mdwc->vbus_reg = NULL;
+			mdwc->hs_phy->flags &= ~PHY_HOST_MODE;
 			return -EPROBE_DEFER;
 		}
 	}
 
 	if (on) {
-		dev_dbg(mdwc->dev, "%s: turn on host\n", __func__);
+		dev_info(mdwc->dev, "[USB] %s: turn on host\n", __func__);
 
 		mdwc->hs_phy->flags |= PHY_HOST_MODE;
 		if (dwc->maximum_speed == USB_SPEED_SUPER) {
@@ -3550,7 +3569,7 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 		schedule_delayed_work(&mdwc->perf_vote_work,
 				msecs_to_jiffies(1000 * PM_QOS_SAMPLE_SEC));
 	} else {
-		dev_dbg(mdwc->dev, "%s: turn off host\n", __func__);
+		dev_info(mdwc->dev, "[USB] %s: turn off host\n", __func__);
 
 		usb_unregister_atomic_notify(&mdwc->usbdev_nb);
 		if (!IS_ERR(mdwc->vbus_reg))

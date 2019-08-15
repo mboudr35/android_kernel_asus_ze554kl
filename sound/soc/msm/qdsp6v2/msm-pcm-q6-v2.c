@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,6 +51,7 @@ static struct audio_locks the_locks;
 #define PCM_MASTER_VOL_MAX_STEPS	0x2000
 static const DECLARE_TLV_DB_LINEAR(msm_pcm_vol_gain, 0,
 			PCM_MASTER_VOL_MAX_STEPS);
+
 
 struct snd_msm {
 	struct snd_card *card;
@@ -183,6 +184,11 @@ static void event_handler(uint32_t opcode,
 	case ASM_DATA_EVENT_READ_DONE_V2: {
 		pr_debug("ASM_DATA_EVENT_READ_DONE_V2\n");
 		buf_index = q6asm_get_buf_index_from_token(token);
+		if (buf_index >= CAPTURE_MAX_NUM_PERIODS) {
+			pr_err("%s: buffer index %u is out of range.\n",
+				__func__, buf_index);
+			return;
+		}
 		pr_debug("%s: token=0x%08x buf_index=0x%08x\n",
 			 __func__, token, buf_index);
 		prtd->in_frame_info[buf_index].size = payload[4];
@@ -1079,6 +1085,7 @@ static int msm_pcm_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 	struct msm_audio *prtd;
 	int ret = 0;
 	struct msm_adsp_event_data *event_data = NULL;
+	uint64_t actual_payload_len = 0;
 
 	if (!pdata) {
 		pr_err("%s pdata is NULL\n", __func__);
@@ -1111,6 +1118,15 @@ static int msm_pcm_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 	    (event_data->event_type >= ADSP_STREAM_EVENT_MAX)) {
 		pr_err("%s: invalid event_type=%d",
 			__func__, event_data->event_type);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	actual_payload_len = sizeof(struct msm_adsp_event_data) +
+							event_data->payload_len;
+	if (actual_payload_len >= U32_MAX) {
+		pr_err("%s payload length 0x%X  exceeds limit",
+			__func__, event_data->payload_len);
 		ret = -EINVAL;
 		goto done;
 	}

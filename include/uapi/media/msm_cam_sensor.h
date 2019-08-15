@@ -18,7 +18,7 @@
 
 #define MAX_OIS_MOD_NAME_SIZE 32
 #define MAX_OIS_NAME_SIZE 32
-#define MAX_OIS_REG_SETTINGS 800
+#define MAX_OIS_REG_SETTINGS 1050 //ASUS_BSP PJ_Ma+++
 
 #define MOVE_NEAR 0
 #define MOVE_FAR  1
@@ -381,6 +381,7 @@ enum msm_ois_cfg_type_t {
 	CFG_OIS_POWERUP,
 	CFG_OIS_CONTROL,
 	CFG_OIS_I2C_WRITE_SEQ_TABLE,
+	CFG_OIS_I2C_WRITE_MODE,  /*ASUS_BSP bill_chen "Implement ois command for dit 3A"*/
 };
 
 enum msm_ois_cfg_download_type_t {
@@ -550,6 +551,7 @@ struct msm_flash_init_info_t {
 
 struct msm_flash_cfg_data_t {
 	enum msm_flash_cfg_type_t cfg_type;
+	enum msm_flash_ctrl_state_t ctrl_state;//ASUS_BSP PJ "add ctrl state for mapping to truth table"
 	int32_t flash_current[MAX_LED_TRIGGERS];
 	int32_t flash_duration[MAX_LED_TRIGGERS];
 	union {
