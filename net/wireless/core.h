@@ -378,6 +378,7 @@ void __cfg80211_roamed(struct wireless_dev *wdev,
 		       const u8 *resp_ie, size_t resp_ie_len);
 int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
 			      struct wireless_dev *wdev);
+void cfg80211_autodisconnect_wk(struct work_struct *work);
 
 /* SME implementation */
 void cfg80211_conn_work(struct work_struct *work);
@@ -437,6 +438,16 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work);
 unsigned int
 cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
 			      const struct cfg80211_chan_def *chandef);
+
+void cfg80211_sched_dfs_chan_update(struct cfg80211_registered_device *rdev);
+
+bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
+				  struct ieee80211_channel *chan);
+
+bool cfg80211_beaconing_iface_active(struct wireless_dev *wdev);
+
+bool cfg80211_is_sub_chan(struct cfg80211_chan_def *chandef,
+			  struct ieee80211_channel *chan);
 
 static inline unsigned int elapsed_jiffies_msecs(unsigned long start)
 {

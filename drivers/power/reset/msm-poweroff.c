@@ -381,21 +381,38 @@ static void msm_restart_prepare(const char *cmd)
 		// --- ASUS_BSP PeterYeh: add for asus user unlock
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
+			unsigned long reset_reason;
 			int ret;
 			ret = kstrtoul(cmd + 4, 16, &code);
-			if (!ret)
+			if (!ret) {
+				/* Bit-2 to bit-7 of SOFT_RB_SPARE for hard
+				 * reset reason:
+				 * Value 0 to 31 for common defined features
+				 * Value 32 to 63 for oem specific features
+				 */
+				reset_reason = code +
+						PON_RESTART_REASON_OEM_MIN;
+				if (reset_reason > PON_RESTART_REASON_OEM_MAX ||
+				   reset_reason < PON_RESTART_REASON_OEM_MIN) {
+					pr_err("Invalid oem reset reason: %lx\n",
+						reset_reason);
+				} else {
+					qpnp_pon_set_restart_reason(
+						reset_reason);
+				}
 				__raw_writel(0x6f656d00 | (code & 0xff),
 					     restart_reason);
-		//Asus_BSP +++ CVE-2017-13174
-		#if defined(ASUS_USER_BUILD)
-		//remove "reboot edl" interface for security
-		#else
-		//Asus_BSP --- CVE-2017-13174
+//Asus_BSP +++ CVE-2017-13174
+#if defined(ASUS_USER_BUILD)
+//remove "reboot edl" interface for security
+#else
+//Asus_BSP --- CVE-2017-13174
+			}
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
-		//Asus_BSP +++ CVE-2017-13174
-		#endif
-		//Asus_BSP --- CVE-2017-13174
+//Asus_BSP +++ CVE-2017-13174
+#endif
+//Asus_BSP --- CVE-2017-13174
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}

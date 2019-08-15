@@ -1061,7 +1061,6 @@ CSID_TG:
 	}
 
 	pr_err("%s probe succeeded", slave_info->sensor_name);
-	pr_err("camera module %s probe -----", slave_info->sensor_name);
 
 	s_ctrl->bypass_video_node_creation =
 		slave_info->bypass_video_node_creation;
@@ -1132,7 +1131,6 @@ CSID_TG:
 	 * probed on this slot
 	 */
 	s_ctrl->is_probe_succeed = 1;
-
 	return rc;
 
 camera_power_down:
@@ -1462,8 +1460,8 @@ static int32_t msm_sensor_driver_i2c_probe(struct i2c_client *client,
 				rc);
 			goto FREE_S_CTRL;
 		}
-		return rc;
 	}
+	return rc;
 FREE_S_CTRL:
 	kfree(s_ctrl);
 	return rc;

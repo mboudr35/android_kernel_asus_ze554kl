@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -632,6 +632,12 @@ const char *msm_hdmi_mode_2string(u32 mode)
 	case HDMI_RES_AR_16_10:
 		aspect_ratio = "16/10";
 		break;
+	case HDMI_RES_AR_64_27:
+		aspect_ratio = "64/27";
+		break;
+	case HDMI_RES_AR_256_135:
+		aspect_ratio = "256/135";
+		break;
 	default:
 		aspect_ratio = "???";
 	};
@@ -784,10 +790,12 @@ static void hdmi_ddc_trigger(struct hdmi_tx_ddc_ctrl *ddc_ctrl,
 	if (mode == TRIGGER_READ && seg) {
 		DSS_REG_W_ND(io, HDMI_DDC_DATA, BIT(31) | (seg_addr << 8));
 		DSS_REG_W_ND(io, HDMI_DDC_DATA, seg_num << 8);
+		DSS_REG_W_ND(io, HDMI_DDC_DATA, (ddc_data->dev_addr << 8));
+	} else {
+		/* handle portion #1 */
+		DSS_REG_W_ND(io, HDMI_DDC_DATA,
+				BIT(31) | (ddc_data->dev_addr << 8));
 	}
-
-	/* handle portion #1 */
-	DSS_REG_W_ND(io, HDMI_DDC_DATA, BIT(31) | (ddc_data->dev_addr << 8));
 
 	/* handle portion #2 */
 	DSS_REG_W_ND(io, HDMI_DDC_DATA, ddc_data->offset << 8);

@@ -13,6 +13,7 @@
 #ifndef __FG_CORE_H__
 #define __FG_CORE_H__
 
+#include <linux/alarmtimer.h>
 #include <linux/atomic.h>
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
@@ -104,7 +105,7 @@ enum sram_access_flags {
 };
 
 /* JEITA */
-enum {
+enum jeita_levels {
 	JEITA_COLD = 0,
 	JEITA_COOL,
 	JEITA_WARM,
@@ -225,6 +226,12 @@ enum slope_limit_status {
 	SLOPE_LIMIT_NUM_COEFFS,
 };
 
+enum esr_filter_status {
+	ROOM_TEMP = 1,
+	LOW_TEMP,
+	RELAX_TEMP,
+};
+
 enum esr_timer_config {
 	TIMER_RETRY = 0,
 	TIMER_MAX,
@@ -272,6 +279,9 @@ struct fg_dt_props {
 	int	esr_broad_flt_upct;
 	int	esr_tight_lt_flt_upct;
 	int	esr_broad_lt_flt_upct;
+	int	esr_flt_rt_switch_temp;
+	int	esr_tight_rt_flt_upct;
+	int	esr_broad_rt_flt_upct;
 	int	slope_limit_temp;
 	int	esr_pulse_thresh_ma;
 	int	esr_meas_curr_ma;
@@ -407,6 +417,7 @@ struct fg_chip {
 	struct mutex		batt_avg_lock;
 	struct mutex		charge_full_lock;
 	struct mutex		charge_status_lock;
+	struct mutex		qnovo_esr_ctrl_lock;
 	spinlock_t		suspend_lock;
 	u32			batt_soc_base;
 	u32			batt_info_base;
@@ -426,8 +437,10 @@ struct fg_chip {
 	int			delta_soc;
 	int			last_msoc;
 	int			last_recharge_volt_mv;
+	int			delta_temp_irq_count;
 	int			esr_timer_charging_default[NUM_ESR_TIMERS];
 	enum slope_limit_status	slope_limit_sts;
+	enum esr_filter_status	esr_flt_sts;
 	bool			profile_available;
 	bool			profile_loaded;
 	bool			battery_missing;
@@ -441,6 +454,7 @@ struct fg_chip {
 	bool			esr_flt_cold_temp_en;
 	bool			slope_limit_en;
 	bool			use_ima_single_mode;
+	bool			qnovo_enable;
 	bool			suspended;
 	struct completion	soc_update;
 	struct completion	soc_ready;
@@ -451,6 +465,9 @@ struct fg_chip {
 	struct delayed_work	sram_dump_work;
 	struct fg_circ_buf	ibatt_circ_buf;
 	struct fg_circ_buf	vbatt_circ_buf;
+	struct work_struct	esr_filter_work;
+	struct alarm		esr_filter_alarm;
+	ktime_t			last_delta_temp_time;
 };
 
 /* Debugfs data structures are below */

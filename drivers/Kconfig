@@ -228,4 +228,6 @@ config TEXURA_ARM64
 	  Say Y here if you want support Texura userdebug module at QCOM ARM64
 	  Say N here if you want support Texura user module at ACOM ARM32
 
+source "drivers/tee/Kconfig"
+
 endmenu

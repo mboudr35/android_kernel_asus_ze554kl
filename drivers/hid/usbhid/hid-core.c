@@ -1004,7 +1004,7 @@ static int usbhid_parse(struct hid_device *hid)
 	hid->country = hdesc->bCountryCode;
 
 	num_descriptors = min_t(int, hdesc->bNumDescriptors,
-		(hdesc->bLength - offset) / sizeof(struct hid_class_descriptor));
+	       (hdesc->bLength - offset) / sizeof(struct hid_class_descriptor));
 
 	for (n = 0; n < num_descriptors; n++)
 		if (hdesc->desc[n].bDescriptorType == HID_DT_REPORT)

@@ -222,6 +222,19 @@ static int msm_transcode_map_ion_fd(struct msm_transcode_loopback *trans,
 					trans->lib_ion_handle,
 					&paddr, &pa_len, ADSP_TO_HLOS);
 	}
+	ret = msm_audio_ion_phys_free(trans->lib_ion_client,
+				      trans->lib_ion_handle,
+				      &paddr, &pa_len, ADSP_TO_HLOS);
+	if (ret) {
+		pr_err("%s: audio lib ION phys failed, rc = %d\n", __func__,
+			ret);
+		goto done;
+	}
+
+	ret = q6core_add_remove_pool_pages(paddr, pa_len,
+					ADSP_MEMORY_MAP_HLOS_PHYSPOOL, false);
+	if (ret)
+		pr_err("%s: remove pages failed, rc = %d\n", __func__, ret);
 
 done:
 	return ret;
@@ -692,9 +705,8 @@ static int msm_transcode_stream_cmd_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-
-	if ((sizeof(struct msm_adsp_event_data) + event_data->payload_len) >=
-					sizeof(ucontrol->value.bytes.data)) {
+	if (event_data->payload_len > sizeof(ucontrol->value.bytes.data)
+		- sizeof(struct msm_adsp_event_data)) {
 		pr_err("%s param length=%d  exceeds limit",
 			 __func__, event_data->payload_len);
 		ret = -EINVAL;

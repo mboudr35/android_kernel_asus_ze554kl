@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -78,6 +78,10 @@ module_param(qmi_timeout, ulong, 0600);
 #define ICNSS_THRESHOLD_HIGH		3600000
 #define ICNSS_THRESHOLD_LOW		3450000
 #define ICNSS_THRESHOLD_GUARD		20000
+
+#define ICNSS_MAX_PROBE_CNT		2
+
+#define PROBE_TIMEOUT			5000
 
 #define icnss_ipc_log_string(_x...) do {				\
 	if (icnss_ipc_log_context)					\
@@ -301,6 +305,9 @@ enum icnss_driver_state {
 	ICNSS_SHUTDOWN_DONE,
 	ICNSS_HOST_TRIGGERED_PDR,
 	ICNSS_FW_DOWN,
+	ICNSS_DRIVER_UNLOADING,
+	ICNSS_REJUVENATE,
+	ICNSS_BLOCK_SHUTDOWN,
 };
 
 struct ce_irq_list {
@@ -493,6 +500,7 @@ static struct icnss_priv {
 	u8 requesting_sub_system;
 	u16 line_number;
 	char function_name[QMI_WLFW_FUNCTION_NAME_LEN_V01 + 1];
+	struct completion unblock_shutdown;
 } *penv;
 
 #ifdef CONFIG_ICNSS_DEBUG
@@ -565,6 +573,12 @@ static int icnss_assign_msa_perm_all(struct icnss_priv *priv,
 	int ret;
 	int i;
 	enum icnss_msa_perm old_perm;
+
+	if (priv->nr_mem_region > QMI_WLFW_MAX_NUM_MEMORY_REGIONS_V01) {
+		icnss_pr_err("Invalid memory region len %d\n",
+			     priv->nr_mem_region);
+		return -EINVAL;
+	}
 
 	for (i = 0; i < priv->nr_mem_region; i++) {
 		old_perm = priv->mem_region[i].perm;
@@ -1129,6 +1143,9 @@ static int icnss_hw_power_off(struct icnss_priv *priv)
 	if (test_bit(HW_ALWAYS_ON, &quirks))
 		return 0;
 
+	if (test_bit(ICNSS_FW_DOWN, &priv->state))
+		return 0;
+
 	icnss_pr_dbg("HW Power off: 0x%lx\n", priv->state);
 
 	spin_lock(&priv->on_off_lock);
@@ -1180,6 +1197,41 @@ int wcnss_get_fw_log_flag(void)
 EXPORT_SYMBOL(wcnss_get_fw_log_flag);
 /* ASUS_BSP--- for wlan firmware log */
 
+void icnss_block_shutdown(bool status)
+{
+	if (!penv)
+		return;
+
+	if (status) {
+		set_bit(ICNSS_BLOCK_SHUTDOWN, &penv->state);
+		reinit_completion(&penv->unblock_shutdown);
+	} else {
+		clear_bit(ICNSS_BLOCK_SHUTDOWN, &penv->state);
+		complete(&penv->unblock_shutdown);
+	}
+}
+EXPORT_SYMBOL(icnss_block_shutdown);
+
+bool icnss_is_fw_down(void)
+{
+	if (!penv)
+		return false;
+
+	return test_bit(ICNSS_FW_DOWN, &penv->state) ||
+		test_bit(ICNSS_PD_RESTART, &penv->state) ||
+		test_bit(ICNSS_REJUVENATE, &penv->state);
+}
+EXPORT_SYMBOL(icnss_is_fw_down);
+
+bool icnss_is_rejuvenate(void)
+{
+	if (!penv)
+		return false;
+	else
+		return test_bit(ICNSS_REJUVENATE, &penv->state);
+}
+EXPORT_SYMBOL(icnss_is_rejuvenate);
+
 int icnss_power_off(struct device *dev)
 {
 	struct icnss_priv *priv = dev_get_drvdata(dev);
@@ -1203,6 +1255,7 @@ static int wlfw_msa_mem_info_send_sync_msg(void)
 	struct wlfw_msa_info_req_msg_v01 req;
 	struct wlfw_msa_info_resp_msg_v01 resp;
 	struct msg_desc req_desc, resp_desc;
+	uint64_t max_mapped_addr;
 
 	if (!penv || !penv->wlfw_clnt)
 		return -ENODEV;
@@ -1249,9 +1302,23 @@ static int wlfw_msa_mem_info_send_sync_msg(void)
 		goto out;
 	}
 
+	max_mapped_addr = penv->msa_pa + penv->msa_mem_size;
 	penv->stats.msa_info_resp++;
 	penv->nr_mem_region = resp.mem_region_info_len;
 	for (i = 0; i < resp.mem_region_info_len; i++) {
+
+		if (resp.mem_region_info[i].size > penv->msa_mem_size ||
+		    resp.mem_region_info[i].region_addr > max_mapped_addr ||
+		    resp.mem_region_info[i].region_addr < penv->msa_pa ||
+		    resp.mem_region_info[i].size +
+		    resp.mem_region_info[i].region_addr > max_mapped_addr) {
+			icnss_pr_dbg("Received out of range Addr: 0x%llx Size: 0x%x\n",
+					resp.mem_region_info[i].region_addr,
+					resp.mem_region_info[i].size);
+			ret = -EINVAL;
+			goto fail_unwind;
+		}
+
 		penv->mem_region[i].reg_addr =
 			resp.mem_region_info[i].region_addr;
 		penv->mem_region[i].size =
@@ -1266,6 +1333,8 @@ static int wlfw_msa_mem_info_send_sync_msg(void)
 
 	return 0;
 
+fail_unwind:
+	memset(&penv->mem_region[0], 0, sizeof(penv->mem_region[0]) * i);
 out:
 	penv->stats.msa_info_err++;
 	ICNSS_QMI_ASSERT();
@@ -1615,6 +1684,56 @@ static int wlfw_ini_send_sync_msg(uint8_t fw_log_mode)
 out:
 	penv->stats.ini_req_err++;
 	ICNSS_QMI_ASSERT();
+	return ret;
+}
+
+static int wlfw_send_modem_shutdown_msg(void)
+{
+	int ret;
+	struct wlfw_shutdown_req_msg_v01 req;
+	struct wlfw_shutdown_resp_msg_v01 resp;
+	struct msg_desc req_desc, resp_desc;
+
+	if (!penv || !penv->wlfw_clnt)
+		return -ENODEV;
+
+	icnss_pr_dbg("Sending modem shutdown request, state: 0x%lx\n",
+		     penv->state);
+
+	memset(&req, 0, sizeof(req));
+	memset(&resp, 0, sizeof(resp));
+
+	req.shutdown_valid = 1;
+	req.shutdown = 1;
+
+	req_desc.max_msg_len = WLFW_SHUTDOWN_REQ_MSG_V01_MAX_MSG_LEN;
+	req_desc.msg_id = QMI_WLFW_SHUTDOWN_REQ_V01;
+	req_desc.ei_array = wlfw_shutdown_req_msg_v01_ei;
+
+	resp_desc.max_msg_len = WLFW_SHUTDOWN_RESP_MSG_V01_MAX_MSG_LEN;
+	resp_desc.msg_id = QMI_WLFW_SHUTDOWN_RESP_V01;
+	resp_desc.ei_array = wlfw_shutdown_resp_msg_v01_ei;
+
+	ret = qmi_send_req_wait(penv->wlfw_clnt, &req_desc, &req, sizeof(req),
+				&resp_desc, &resp, sizeof(resp),
+				WLFW_TIMEOUT_MS);
+	if (ret < 0) {
+		icnss_pr_err("Send modem shutdown req failed, ret: %d\n", ret);
+		goto out;
+	}
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		icnss_pr_err("QMI modem shutdown request rejected result:%d error:%d\n",
+			     resp.resp.result, resp.resp.error);
+		ret = -resp.resp.result;
+		goto out;
+	}
+
+	icnss_pr_dbg("modem shutdown request sent successfully, state: 0x%lx\n",
+		     penv->state);
+	return 0;
+
+out:
 	return ret;
 }
 
@@ -1999,6 +2118,7 @@ static void icnss_qmi_wlfw_clnt_ind(struct qmi_handle *handle,
 		event_data->crashed = true;
 		event_data->fw_rejuvenate = true;
 		fw_down_data.crashed = true;
+		set_bit(ICNSS_REJUVENATE, &penv->state);
 		icnss_call_driver_uevent(penv, ICNSS_UEVENT_FW_DOWN,
 					 &fw_down_data);
 		icnss_driver_event_post(ICNSS_DRIVER_EVENT_PD_SERVICE_DOWN,
@@ -2089,6 +2209,7 @@ static int icnss_driver_event_server_arrive(void *data)
 
 err_setup_msa:
 	icnss_assign_msa_perm_all(penv, ICNSS_MSA_PERM_HLOS_ALL);
+	clear_bit(ICNSS_MSA0_ASSIGNED, &penv->state);
 err_power_on:
 	icnss_hw_power_off(penv);
 fail:
@@ -2120,7 +2241,8 @@ static int icnss_driver_event_server_exit(void *data)
 
 static int icnss_call_driver_probe(struct icnss_priv *priv)
 {
-	int ret;
+	int ret = 0;
+	int probe_cnt = 0;
 
 	if (!priv->ops || !priv->ops->probe)
 		return 0;
@@ -2132,13 +2254,21 @@ static int icnss_call_driver_probe(struct icnss_priv *priv)
 
 	icnss_hw_power_on(priv);
 
-	ret = priv->ops->probe(&priv->pdev->dev);
+	icnss_block_shutdown(true);
+	while (probe_cnt < ICNSS_MAX_PROBE_CNT) {
+		ret = priv->ops->probe(&priv->pdev->dev);
+		probe_cnt++;
+		if (ret != -EPROBE_DEFER)
+			break;
+	}
 	if (ret < 0) {
-		icnss_pr_err("Driver probe failed: %d, state: 0x%lx\n",
-			     ret, priv->state);
+		icnss_pr_err("Driver probe failed: %d, state: 0x%lx, probe_cnt: %d\n",
+			     ret, priv->state, probe_cnt);
+		icnss_block_shutdown(false);
 		goto out;
 	}
 
+	icnss_block_shutdown(false);
 	set_bit(ICNSS_DRIVER_PROBED, &priv->state);
 
 	return 0;
@@ -2176,10 +2306,17 @@ static int icnss_pd_restart_complete(struct icnss_priv *priv)
 
 	icnss_call_driver_shutdown(priv);
 
+	clear_bit(ICNSS_REJUVENATE, &penv->state);
 	clear_bit(ICNSS_PD_RESTART, &priv->state);
 
 	if (!priv->ops || !priv->ops->reinit)
 		goto out;
+
+	if (test_bit(ICNSS_FW_DOWN, &priv->state)) {
+		icnss_pr_err("FW is in bad state, state: 0x%lx\n",
+			     priv->state);
+		goto out;
+	}
 
 	if (!test_bit(ICNSS_DRIVER_PROBED, &priv->state))
 		goto call_probe;
@@ -2219,8 +2356,6 @@ static int icnss_driver_event_fw_ready_ind(void *data)
 
 	set_bit(ICNSS_FW_READY, &penv->state);
 
-	icnss_call_driver_uevent(penv, ICNSS_UEVENT_FW_READY, NULL);
-
 	icnss_pr_info("WLAN FW is ready: 0x%lx\n", penv->state);
 
 	icnss_hw_power_off(penv);
@@ -2243,6 +2378,7 @@ out:
 static int icnss_driver_event_register_driver(void *data)
 {
 	int ret = 0;
+	int probe_cnt = 0;
 
 	if (penv->ops)
 		return -EEXIST;
@@ -2251,6 +2387,12 @@ static int icnss_driver_event_register_driver(void *data)
 
 	if (test_bit(SKIP_QMI, &quirks))
 		set_bit(ICNSS_FW_READY, &penv->state);
+
+	if (test_bit(ICNSS_FW_DOWN, &penv->state)) {
+		icnss_pr_err("FW is in bad state, state: 0x%lx\n",
+			     penv->state);
+		return -ENODEV;
+	}
 
 	if (!test_bit(ICNSS_FW_READY, &penv->state)) {
 		icnss_pr_dbg("FW is not ready yet, state: 0x%lx\n",
@@ -2262,14 +2404,21 @@ static int icnss_driver_event_register_driver(void *data)
 	if (ret)
 		goto out;
 
-	ret = penv->ops->probe(&penv->pdev->dev);
-
+	icnss_block_shutdown(true);
+	while (probe_cnt < ICNSS_MAX_PROBE_CNT) {
+		ret = penv->ops->probe(&penv->pdev->dev);
+		probe_cnt++;
+		if (ret != -EPROBE_DEFER)
+			break;
+	}
 	if (ret) {
-		icnss_pr_err("Driver probe failed: %d, state: 0x%lx\n",
-			     ret, penv->state);
+		icnss_pr_err("Driver probe failed: %d, state: 0x%lx, probe_cnt: %d\n",
+			     ret, penv->state, probe_cnt);
+		icnss_block_shutdown(false);
 		goto power_off;
 	}
 
+	icnss_block_shutdown(false);
 	set_bit(ICNSS_DRIVER_PROBED, &penv->state);
 
 	return 0;
@@ -2287,9 +2436,11 @@ static int icnss_driver_event_unregister_driver(void *data)
 		goto out;
 	}
 
+	set_bit(ICNSS_DRIVER_UNLOADING, &penv->state);
 	if (penv->ops)
 		penv->ops->remove(&penv->pdev->dev);
 
+	clear_bit(ICNSS_DRIVER_UNLOADING, &penv->state);
 	clear_bit(ICNSS_DRIVER_PROBED, &penv->state);
 
 	penv->ops = NULL;
@@ -2297,27 +2448,6 @@ static int icnss_driver_event_unregister_driver(void *data)
 	icnss_hw_power_off(penv);
 
 out:
-	return 0;
-}
-
-static int icnss_call_driver_remove(struct icnss_priv *priv)
-{
-	icnss_pr_dbg("Calling driver remove state: 0x%lx\n", priv->state);
-
-	clear_bit(ICNSS_FW_READY, &priv->state);
-
-	if (!test_bit(ICNSS_DRIVER_PROBED, &penv->state))
-		return 0;
-
-	if (!priv->ops || !priv->ops->remove)
-		return 0;
-
-	penv->ops->remove(&priv->pdev->dev);
-
-	clear_bit(ICNSS_DRIVER_PROBED, &priv->state);
-
-	icnss_hw_power_off(penv);
-
 	return 0;
 }
 
@@ -2349,17 +2479,14 @@ static int icnss_driver_event_pd_service_down(struct icnss_priv *priv,
 	if (!test_bit(ICNSS_WLFW_EXISTS, &priv->state))
 		goto out;
 
-	if (test_bit(ICNSS_PD_RESTART, &priv->state)) {
+	if (test_bit(ICNSS_PD_RESTART, &priv->state) && event_data->crashed) {
 		icnss_pr_err("PD Down while recovery inprogress, crashed: %d, state: 0x%lx\n",
 			     event_data->crashed, priv->state);
 		ICNSS_ASSERT(0);
 		goto out;
 	}
 
-	if (event_data->crashed)
-		icnss_fw_crashed(priv, event_data);
-	else
-		icnss_call_driver_remove(priv);
+	icnss_fw_crashed(priv, event_data);
 
 out:
 	kfree(data);
@@ -2495,7 +2622,8 @@ static int icnss_modem_notifier_nb(struct notifier_block *nb,
 
 	icnss_pr_vdbg("Modem-Notify: event %lu\n", code);
 
-	if (code == SUBSYS_AFTER_SHUTDOWN) {
+	if (code == SUBSYS_AFTER_SHUTDOWN &&
+	    notif->crashed == CRASH_STATUS_ERR_FATAL) {
 		ret = icnss_assign_msa_perm_all(priv,
 						ICNSS_MSA_PERM_DUMP_COLLECT);
 		if (!ret) {
@@ -2513,8 +2641,32 @@ static int icnss_modem_notifier_nb(struct notifier_block *nb,
 	if (code != SUBSYS_BEFORE_SHUTDOWN)
 		return NOTIFY_OK;
 
-	if (test_bit(ICNSS_PDR_REGISTERED, &priv->state))
+	if (code == SUBSYS_BEFORE_SHUTDOWN && !notif->crashed &&
+	    test_bit(ICNSS_BLOCK_SHUTDOWN, &priv->state)) {
+		if (!wait_for_completion_timeout(&priv->unblock_shutdown,
+						 PROBE_TIMEOUT))
+			icnss_pr_err("wlan driver probe timeout\n");
+	}
+
+	if (code == SUBSYS_BEFORE_SHUTDOWN && !notif->crashed) {
+		ret = wlfw_send_modem_shutdown_msg();
+		if (ret)
+		icnss_pr_dbg("Fail to send modem shutdown Indication %d\n",
+		ret);
+	}
+
+	if (test_bit(ICNSS_PDR_REGISTERED, &priv->state)) {
+		set_bit(ICNSS_FW_DOWN, &priv->state);
+		icnss_ignore_qmi_timeout(true);
+
+		fw_down_data.crashed = !!notif->crashed;
+		if (test_bit(ICNSS_FW_READY, &priv->state) &&
+		    !test_bit(ICNSS_DRIVER_UNLOADING, &priv->state))
+			icnss_call_driver_uevent(priv,
+						 ICNSS_UEVENT_FW_DOWN,
+						 &fw_down_data);
 		return NOTIFY_OK;
+	}
 
 	icnss_pr_info("Modem went down, state: 0x%lx, crashed: %d\n",
 		      priv->state, notif->crashed);
@@ -2648,12 +2800,19 @@ static int icnss_service_notifier_notify(struct notifier_block *nb,
 	icnss_pr_info("PD service down, pd_state: %d, state: 0x%lx: cause: %s\n",
 		      *state, priv->state, icnss_pdr_cause[cause]);
 event_post:
-	set_bit(ICNSS_FW_DOWN, &priv->state);
-	icnss_ignore_qmi_timeout(true);
-	clear_bit(ICNSS_HOST_TRIGGERED_PDR, &priv->state);
+	if (!test_bit(ICNSS_FW_DOWN, &priv->state)) {
+		set_bit(ICNSS_FW_DOWN, &priv->state);
+		icnss_ignore_qmi_timeout(true);
 
-	fw_down_data.crashed = event_data->crashed;
-	icnss_call_driver_uevent(priv, ICNSS_UEVENT_FW_DOWN, &fw_down_data);
+		fw_down_data.crashed = event_data->crashed;
+		if (test_bit(ICNSS_FW_READY, &priv->state) &&
+		    !test_bit(ICNSS_DRIVER_UNLOADING, &priv->state))
+			icnss_call_driver_uevent(priv,
+						 ICNSS_UEVENT_FW_DOWN,
+						 &fw_down_data);
+	}
+
+	clear_bit(ICNSS_HOST_TRIGGERED_PDR, &priv->state);
 	icnss_driver_event_post(ICNSS_DRIVER_EVENT_PD_SERVICE_DOWN,
 				ICNSS_EVENT_SYNC, event_data);
 done:
@@ -2805,7 +2964,8 @@ enable_pdr:
 	return 0;
 }
 
-int icnss_register_driver(struct icnss_driver_ops *ops)
+int __icnss_register_driver(struct icnss_driver_ops *ops,
+			    struct module *owner, const char *mod_name)
 {
 	int ret = 0;
 
@@ -2836,7 +2996,7 @@ int icnss_register_driver(struct icnss_driver_ops *ops)
 out:
 	return ret;
 }
-EXPORT_SYMBOL(icnss_register_driver);
+EXPORT_SYMBOL(__icnss_register_driver);
 
 int icnss_unregister_driver(struct icnss_driver_ops *ops)
 {
@@ -2862,7 +3022,7 @@ out:
 }
 EXPORT_SYMBOL(icnss_unregister_driver);
 
-int icnss_ce_request_irq(unsigned int ce_id,
+int icnss_ce_request_irq(struct device *dev, unsigned int ce_id,
 	irqreturn_t (*handler)(int, void *),
 		unsigned long flags, const char *name, void *ctx)
 {
@@ -2870,7 +3030,7 @@ int icnss_ce_request_irq(unsigned int ce_id,
 	unsigned int irq;
 	struct ce_irq_list *irq_entry;
 
-	if (!penv || !penv->pdev) {
+	if (!penv || !penv->pdev || !dev) {
 		ret = -ENODEV;
 		goto out;
 	}
@@ -2909,13 +3069,13 @@ out:
 }
 EXPORT_SYMBOL(icnss_ce_request_irq);
 
-int icnss_ce_free_irq(unsigned int ce_id, void *ctx)
+int icnss_ce_free_irq(struct device *dev, unsigned int ce_id, void *ctx)
 {
 	int ret = 0;
 	unsigned int irq;
 	struct ce_irq_list *irq_entry;
 
-	if (!penv || !penv->pdev) {
+	if (!penv || !penv->pdev || !dev) {
 		ret = -ENODEV;
 		goto out;
 	}
@@ -2945,11 +3105,11 @@ out:
 }
 EXPORT_SYMBOL(icnss_ce_free_irq);
 
-void icnss_enable_irq(unsigned int ce_id)
+void icnss_enable_irq(struct device *dev, unsigned int ce_id)
 {
 	unsigned int irq;
 
-	if (!penv || !penv->pdev) {
+	if (!penv || !penv->pdev || !dev) {
 		icnss_pr_err("Platform driver not initialized\n");
 		return;
 	}
@@ -2969,11 +3129,11 @@ void icnss_enable_irq(unsigned int ce_id)
 }
 EXPORT_SYMBOL(icnss_enable_irq);
 
-void icnss_disable_irq(unsigned int ce_id)
+void icnss_disable_irq(struct device *dev, unsigned int ce_id)
 {
 	unsigned int irq;
 
-	if (!penv || !penv->pdev) {
+	if (!penv || !penv->pdev || !dev) {
 		icnss_pr_err("Platform driver not initialized\n");
 		return;
 	}
@@ -2994,9 +3154,11 @@ void icnss_disable_irq(unsigned int ce_id)
 }
 EXPORT_SYMBOL(icnss_disable_irq);
 
-int icnss_get_soc_info(struct icnss_soc_info *info)
+int icnss_get_soc_info(struct device *dev, struct icnss_soc_info *info)
 {
-	if (!penv) {
+	char *fw_build_timestamp = NULL;
+
+	if (!penv || !dev) {
 		icnss_pr_err("Platform driver not initialized\n");
 		return -EINVAL;
 	}
@@ -3008,6 +3170,8 @@ int icnss_get_soc_info(struct icnss_soc_info *info)
 	info->board_id = penv->board_info.board_id;
 	info->soc_id = penv->soc_info.soc_id;
 	info->fw_version = penv->fw_version_info.fw_version;
+	fw_build_timestamp = penv->fw_version_info.fw_build_timestamp;
+	fw_build_timestamp[QMI_WLFW_MAX_TIMESTAMP_LEN_V01] = '\0';
 	strlcpy(info->fw_build_timestamp,
 		penv->fw_version_info.fw_build_timestamp,
 		QMI_WLFW_MAX_TIMESTAMP_LEN_V01 + 1);
@@ -3016,9 +3180,18 @@ int icnss_get_soc_info(struct icnss_soc_info *info)
 }
 EXPORT_SYMBOL(icnss_get_soc_info);
 
-int icnss_set_fw_log_mode(uint8_t fw_log_mode)
+int icnss_set_fw_log_mode(struct device *dev, uint8_t fw_log_mode)
 {
 	int ret;
+
+	if (!dev)
+		return -ENODEV;
+
+	if (test_bit(ICNSS_FW_DOWN, &penv->state)) {
+		icnss_pr_err("FW down, ignoring fw_log_mode state: 0x%lx\n",
+			     penv->state);
+		return -EINVAL;
+	}
 
 	icnss_pr_dbg("FW log mode: %u\n", fw_log_mode);
 
@@ -3102,13 +3275,22 @@ out:
 }
 EXPORT_SYMBOL(icnss_athdiag_write);
 
-int icnss_wlan_enable(struct icnss_wlan_enable_cfg *config,
+int icnss_wlan_enable(struct device *dev, struct icnss_wlan_enable_cfg *config,
 		      enum icnss_driver_mode mode,
 		      const char *host_version)
 {
 	struct wlfw_wlan_cfg_req_msg_v01 req;
 	u32 i;
 	int ret;
+
+	if (!dev)
+		return -ENODEV;
+
+	if (test_bit(ICNSS_FW_DOWN, &penv->state)) {
+		icnss_pr_err("FW down, ignoring wlan_enable state: 0x%lx\n",
+			     penv->state);
+		return -EINVAL;
+	}
 
 	icnss_pr_dbg("Mode: %d, config: %p, host_version: %s\n",
 		     mode, config, host_version);
@@ -3176,23 +3358,26 @@ out:
 }
 EXPORT_SYMBOL(icnss_wlan_enable);
 
-int icnss_wlan_disable(enum icnss_driver_mode mode)
+int icnss_wlan_disable(struct device *dev, enum icnss_driver_mode mode)
 {
+	if (!dev)
+		return -ENODEV;
+
 	return wlfw_wlan_mode_send_sync_msg(QMI_WLFW_OFF_V01);
 }
 EXPORT_SYMBOL(icnss_wlan_disable);
 
-bool icnss_is_qmi_disable(void)
+bool icnss_is_qmi_disable(struct device *dev)
 {
 	return test_bit(SKIP_QMI, &quirks) ? true : false;
 }
 EXPORT_SYMBOL(icnss_is_qmi_disable);
 
-int icnss_get_ce_id(int irq)
+int icnss_get_ce_id(struct device *dev, int irq)
 {
 	int i;
 
-	if (!penv || !penv->pdev)
+	if (!penv || !penv->pdev || !dev)
 		return -ENODEV;
 
 	for (i = 0; i < ICNSS_MAX_IRQ_REGISTRATIONS; i++) {
@@ -3206,11 +3391,11 @@ int icnss_get_ce_id(int irq)
 }
 EXPORT_SYMBOL(icnss_get_ce_id);
 
-int icnss_get_irq(int ce_id)
+int icnss_get_irq(struct device *dev, int ce_id)
 {
 	int irq;
 
-	if (!penv || !penv->pdev)
+	if (!penv || !penv->pdev || !dev)
 		return -ENODEV;
 
 	if (ce_id >= ICNSS_MAX_IRQ_REGISTRATIONS)
@@ -3392,7 +3577,6 @@ int icnss_trigger_recovery(struct device *dev)
 		goto out;
 	}
 
-	WARN_ON(1);
 	icnss_pr_warn("Initiate PD restart at WLAN FW, state: 0x%lx\n",
 		      priv->state);
 
@@ -3644,7 +3828,7 @@ static int icnss_test_mode_fw_test_off(struct icnss_priv *priv)
 		goto out;
 	}
 
-	icnss_wlan_disable(ICNSS_OFF);
+	icnss_wlan_disable(&priv->pdev->dev, ICNSS_OFF);
 
 	ret = icnss_hw_power_off(priv);
 
@@ -3685,7 +3869,7 @@ static int icnss_test_mode_fw_test(struct icnss_priv *priv,
 
 	set_bit(ICNSS_FW_TEST_MODE, &priv->state);
 
-	ret = icnss_wlan_enable(NULL, mode, NULL);
+	ret = icnss_wlan_enable(&priv->pdev->dev, NULL, mode, NULL);
 	if (ret)
 		goto power_off;
 
@@ -3855,6 +4039,14 @@ static int icnss_stats_show_state(struct seq_file *s, struct icnss_priv *priv)
 		case ICNSS_FW_DOWN:
 			seq_puts(s, "FW DOWN");
 			continue;
+		case ICNSS_REJUVENATE:
+			seq_puts(s, "FW REJUVENATE");
+			continue;
+		case ICNSS_DRIVER_UNLOADING:
+			seq_puts(s, "DRIVER UNLOADING");
+			continue;
+		case ICNSS_BLOCK_SHUTDOWN:
+			seq_puts(s, "BLOCK SHUTDOWN");
 		}
 
 		seq_printf(s, "UNKNOWN-%d", i);
@@ -4526,6 +4718,8 @@ static int icnss_probe(struct platform_device *pdev)
 
 	penv = priv;
 
+	init_completion(&priv->unblock_shutdown);
+
 	icnss_pr_info("Platform driver probed successfully\n");
 
 	return 0;
@@ -4547,6 +4741,8 @@ static int icnss_remove(struct platform_device *pdev)
 	device_init_wakeup(&penv->pdev->dev, false);
 
 	icnss_debugfs_destroy(penv);
+
+	complete_all(&penv->unblock_shutdown);
 
 	icnss_modem_ssr_unregister_notifier(penv);
 

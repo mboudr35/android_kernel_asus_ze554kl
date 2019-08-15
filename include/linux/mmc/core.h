@@ -131,6 +131,8 @@ struct mmc_bus_ops {
 	int (*shutdown)(struct mmc_host *);
 	int (*reset)(struct mmc_host *);
 	int (*change_bus_speed)(struct mmc_host *, unsigned long *);
+	int (*pre_hibernate)(struct mmc_host *);
+	int (*post_hibernate)(struct mmc_host *);
 };
 
 struct mmc_card;
@@ -224,8 +226,8 @@ extern void mmc_cmdq_clk_scaling_start_busy(struct mmc_host *host,
 	bool lock_needed);
 extern void mmc_cmdq_clk_scaling_stop_busy(struct mmc_host *host,
 	bool lock_needed, bool is_cmdq_dcmd);
-extern void mmc_recovery_fallback_lower_speed(struct mmc_host *host);
 extern unsigned int emmc_get_erase_count(struct mmc_card *card);	// ASUS_BSP Deeo : for dump hynix erase count
+extern int mmc_recovery_fallback_lower_speed(struct mmc_host *host);
 
 
 #define EMMC_STATUS //ASUS_BSP Deeo : define dump eMMC health check feature +++

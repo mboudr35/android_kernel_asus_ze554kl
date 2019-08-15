@@ -1967,6 +1967,7 @@ static int mdss_dp_edid_init(struct mdss_panel_data *pdata)
 
 	edid_init_data.kobj = dp_drv->kobj;
 	edid_init_data.max_pclk_khz = dp_drv->max_pclk_khz;
+	edid_init_data.yc420_support = false;
 
 	edid_data = hdmi_edid_init(&edid_init_data);
 	if (!edid_data) {
@@ -3055,7 +3056,6 @@ static void mdss_dp_mainlink_push_idle(struct mdss_panel_data *pdata)
 		if (mdss_dp_aux_send_psm_request(dp_drv, true))
 			pr_err("Failed to enter low power mode\n");
 	}
-
 	reinit_completion(&dp_drv->idle_comp);
 	mdss_dp_state_ctrl(&dp_drv->ctrl_io, ST_PUSH_IDLE);
 	if (!wait_for_completion_timeout(&dp_drv->idle_comp,
