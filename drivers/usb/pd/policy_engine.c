@@ -2386,7 +2386,7 @@ static void usbpd_sm(struct work_struct *w)
 			pd->src_cap_id++;
 
 #ifdef CONFIG_ASUS_PD_CHARGER
-			pd->src_cap_cnt = rx_msg->len;
+			pd->src_cap_cnt = rx_msg->data_len;
 #endif
 			usbpd_set_state(pd, PE_SNK_EVALUATE_CAPABILITY);
 

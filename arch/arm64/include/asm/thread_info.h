@@ -57,6 +57,9 @@ struct thread_info {
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	int			cpu;		/* cpu */
 #endif
+	struct mutex *		pWaitingMutex;          //ASUS_BSP + [thomas]Add for slow log
+	struct completion *	pWaitingCompletion;     //ASUS_BSP + [thomas]Add for slow log
+	struct rt_mutex *	pWaitingRTMutex;        //ASUS_BSP + [thomas]Add for slow log
 };
 
 #ifdef CONFIG_THREAD_INFO_IN_TASK
