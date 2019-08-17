@@ -402,18 +402,14 @@ static void msm_restart_prepare(const char *cmd)
 				}
 				__raw_writel(0x6f656d00 | (code & 0xff),
 					     restart_reason);
-//Asus_BSP +++ CVE-2017-13174
-#if defined(ASUS_USER_BUILD)
-//remove "reboot edl" interface for security
-#else
-//Asus_BSP --- CVE-2017-13174
 			}
-		} else if (!strncmp(cmd, "edl", 3)) {
+		}
+#ifndef ASUS_USER_BUILD
+		else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
-//Asus_BSP +++ CVE-2017-13174
+		}
 #endif
-//Asus_BSP --- CVE-2017-13174
-		} else {
+		else {
 			__raw_writel(0x77665501, restart_reason);
 		}
 	}
