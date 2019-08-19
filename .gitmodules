@@ -1,0 +1,12 @@
+[submodule "drivers/staging/fw-api"]
+	path = drivers/staging/fw-api
+	url = https://source.codeaurora.org/quic/la/platform/vendor/qcom-opensource/wlan/fw-api
+	branch = wlan-api.lnx.1.1.r45-rel
+[submodule "drivers/staging/qca-wifi-host-cmn"]
+	path = drivers/staging/qca-wifi-host-cmn
+	url = https://source.codeaurora.org/quic/la/platform/vendor/qcom-opensource/wlan/qca-wifi-host-cmn
+	branch = wlan-cmn.driver.lnx.1.0.r41-rel
+[submodule "drivers/staging/qcacld-3.0"]
+	path = drivers/staging/qcacld-3.0
+	url = https://source.codeaurora.org/quic/la/platform/vendor/qcom-opensource/wlan/qcacld-3.0
+	branch = wlan-cld3.driver.lnx.1.1.r41-rel
